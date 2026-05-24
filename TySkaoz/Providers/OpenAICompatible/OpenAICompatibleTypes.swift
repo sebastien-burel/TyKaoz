@@ -1,20 +1,23 @@
 import Foundation
 
-struct MistralChatMessage: Codable, Hashable {
+/// Shared OpenAI-compatible chat completion schema. Reused by Mistral,
+/// OpenAI, DeepSeek (and any future provider that exposes the same wire
+/// format).
+
+struct OpenAICompatibleMessage: Codable, Hashable {
     let role: String
     let content: String
 }
 
-struct MistralChatRequest: Encodable {
+struct OpenAICompatibleRequest: Encodable {
     let model: String
-    let messages: [MistralChatMessage]
+    let messages: [OpenAICompatibleMessage]
     let stream: Bool
 }
 
-/// One streamed chunk from Mistral. The schema is OpenAI-compatible:
-/// `choices[0].delta.content` is the delta, `finish_reason` is non-nil on
-/// the last chunk.
-struct MistralChatChunk: Decodable {
+/// One streamed chunk. `choices[0].delta.content` carries the delta;
+/// `finish_reason` is non-nil on the final chunk.
+struct OpenAICompatibleChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
             let content: String?
@@ -30,7 +33,7 @@ struct MistralChatChunk: Decodable {
     let choices: [Choice]
 }
 
-struct MistralModelsResponse: Decodable {
+struct OpenAICompatibleModelsResponse: Decodable {
     struct Model: Decodable, Identifiable, Hashable {
         let id: String
     }

@@ -47,12 +47,12 @@ struct MistralSettingsView: View {
             return
         }
         state = .loading
-        let client = MistralClient(apiKey: settings.mistralAPIKey)
+        let client = OpenAICompatibleClient(baseURL: MistralProvider.baseURL, apiKey: settings.mistralAPIKey)
         do {
             let listed = try await client.listModels()
             settings.setCatalog(listed.map(\.id).sorted(), for: .mistral)
             state = .success(count: listed.count)
-        } catch let error as MistralClientError {
+        } catch let error as OpenAICompatibleError {
             state = .failure(message: error.errorDescription ?? "Erreur.")
         } catch {
             state = .failure(message: error.localizedDescription)

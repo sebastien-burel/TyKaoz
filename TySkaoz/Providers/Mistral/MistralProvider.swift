@@ -7,12 +7,14 @@ struct MistralProvider: LLMProvider {
     let apiKey: String
     let model: String
 
-    private let client: MistralClient
+    private let client: OpenAICompatibleClient
+
+    static let baseURL = URL(string: "https://api.mistral.ai/v1")!
 
     init(apiKey: String, model: String, session: URLSession = .shared) {
         self.apiKey = apiKey
         self.model = model
-        self.client = MistralClient(apiKey: apiKey, session: session)
+        self.client = OpenAICompatibleClient(baseURL: Self.baseURL, apiKey: apiKey, session: session)
     }
 
     func availability() async -> ProviderAvailability {
@@ -25,7 +27,7 @@ struct MistralProvider: LLMProvider {
                 return .unavailable(reason: "Le modèle « \(model) » n'est pas accessible avec cette clé.")
             }
             return .ready
-        } catch let error as MistralClientError {
+        } catch let error as OpenAICompatibleError {
             return .unavailable(reason: error.errorDescription ?? "Erreur.")
         } catch {
             return .unavailable(reason: error.localizedDescription)
@@ -33,7 +35,7 @@ struct MistralProvider: LLMProvider {
     }
 
     func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
-        let mistralMessages = messages.map { MistralChatMessage(role: $0.role.rawValue, content: $0.content) }
-        return client.chat(model: model, messages: mistralMessages)
+        let mapped = messages.map { OpenAICompatibleMessage(role: $0.role.rawValue, content: $0.content) }
+        return client.chat(model: model, messages: mapped)
     }
 }
