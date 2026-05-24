@@ -1,7 +1,7 @@
 import Foundation
 
-struct Message: Identifiable, Hashable {
-    enum Role: String, Hashable {
+struct Message: Identifiable, Hashable, Codable {
+    enum Role: String, Hashable, Codable {
         case user
         case assistant
     }

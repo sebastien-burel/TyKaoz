@@ -1,6 +1,6 @@
 import Foundation
 
-struct Conversation: Identifiable, Hashable {
+struct Conversation: Identifiable, Hashable, Codable {
     let id: UUID
     var title: String
     let createdAt: Date

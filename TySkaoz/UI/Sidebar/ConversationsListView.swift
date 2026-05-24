@@ -1,23 +1,28 @@
 import SwiftUI
 
 struct ConversationsListView: View {
-    @Binding var conversations: [Conversation]
+    @Environment(ConversationStore.self) private var store
     @Binding var selection: Conversation.ID?
+
+    @State private var editingID: Conversation.ID?
+    @State private var editedTitle: String = ""
+    @FocusState private var titleFocused: Bool
+
+    @State private var deletionTarget: Conversation?
 
     var body: some View {
         VStack(spacing: 0) {
             List(selection: $selection) {
-                ForEach(conversations) { conversation in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(conversation.title)
-                            .font(Brand.Fonts.body(14))
-                            .foregroundStyle(Brand.Colors.ink)
-                        Text(conversation.createdAt, style: .date)
-                            .font(Brand.Fonts.body(11))
-                            .foregroundStyle(Brand.Colors.slate.opacity(0.6))
-                    }
-                    .padding(.vertical, 4)
-                    .tag(conversation.id)
+                ForEach(store.conversations) { conversation in
+                    row(for: conversation)
+                        .padding(.vertical, 4)
+                        .tag(conversation.id)
+                        .contextMenu {
+                            Button("Renommer") { beginEditing(conversation) }
+                            Button("Supprimer", role: .destructive) {
+                                deletionTarget = conversation
+                            }
+                        }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -40,14 +45,79 @@ struct ConversationsListView: View {
         .frame(minWidth: 220)
         .toolbar {
             ToolbarItem {
-                Button {
-                    let new = Conversation(title: "Nouvelle conversation")
-                    conversations.append(new)
-                    selection = new.id
-                } label: {
+                Button(action: createConversation) {
                     Label("Nouvelle conversation", systemImage: "plus")
                 }
             }
         }
+        .onDeleteCommand {
+            guard let id = selection,
+                  let conv = store.conversations.first(where: { $0.id == id })
+            else { return }
+            deletionTarget = conv
+        }
+        .confirmationDialog(
+            "Supprimer la conversation ?",
+            isPresented: Binding(
+                get: { deletionTarget != nil },
+                set: { if !$0 { deletionTarget = nil } }
+            ),
+            presenting: deletionTarget
+        ) { conv in
+            Button("Supprimer", role: .destructive) {
+                if selection == conv.id { selection = nil }
+                store.delete(id: conv.id)
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: { conv in
+            Text("« \(conv.title) » sera supprimée définitivement.")
+        }
+    }
+
+    @ViewBuilder
+    private func row(for conversation: Conversation) -> some View {
+        if editingID == conversation.id {
+            TextField("", text: $editedTitle)
+                .font(Brand.Fonts.body(14))
+                .textFieldStyle(.plain)
+                .focused($titleFocused)
+                .onSubmit { commitRename(conversation) }
+                .onExitCommand { editingID = nil }
+                .onChange(of: titleFocused) { _, focused in
+                    if !focused && editingID == conversation.id {
+                        commitRename(conversation)
+                    }
+                }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(conversation.title)
+                    .font(Brand.Fonts.body(14))
+                    .foregroundStyle(Brand.Colors.ink)
+                Text(conversation.createdAt, style: .date)
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(Brand.Colors.slate.opacity(0.6))
+            }
+        }
+    }
+
+    private func createConversation() {
+        let new = Conversation(title: "Nouvelle conversation")
+        store.add(new)
+        selection = new.id
+    }
+
+    private func beginEditing(_ conversation: Conversation) {
+        editedTitle = conversation.title
+        editingID = conversation.id
+        // Focus on the next runloop tick so the TextField has appeared.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(20))
+            titleFocused = true
+        }
+    }
+
+    private func commitRename(_ conversation: Conversation) {
+        store.rename(id: conversation.id, to: editedTitle)
+        editingID = nil
     }
 }
