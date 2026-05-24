@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import TySkaoz
 
-@Suite(.serialized)
+@Suite(.serialized) @MainActor
 struct OllamaClientTests {
     private let baseURL = URL(string: "http://localhost:11434")!
 

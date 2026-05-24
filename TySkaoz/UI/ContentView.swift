@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(AppSettings.self) private var settings
+
     @State private var conversations: [Conversation] = MockData.conversations
     @State private var selection: Conversation.ID?
 
@@ -12,7 +14,11 @@ struct ContentView: View {
             )
             .navigationTitle("TyKaoz")
         } detail: {
-            ChatView(conversation: selectedBinding)
+            ChatView(
+                conversation: selectedBinding,
+                serverURL: settings.serverURL,
+                model: settings.selectedModel
+            )
         }
         .preferredColorScheme(.light)
     }
@@ -32,4 +38,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environment(AppSettings())
 }
