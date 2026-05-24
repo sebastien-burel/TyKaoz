@@ -36,7 +36,7 @@ struct OpenAICompatibleClient {
     func listModels() async throws -> [OpenAICompatibleModelsResponse.Model] {
         var request = URLRequest(url: baseURL.appending(path: "/models"))
         request.timeoutInterval = 10
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
 
         let data: Data
         let response: URLResponse
@@ -69,7 +69,7 @@ struct OpenAICompatibleClient {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                    request.setValue("Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
                     request.timeoutInterval = 60
                     request.httpBody = try JSONEncoder().encode(
                         OpenAICompatibleRequest(model: model, messages: messages, stream: true)

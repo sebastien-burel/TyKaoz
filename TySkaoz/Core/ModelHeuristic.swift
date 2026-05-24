@@ -8,12 +8,7 @@ enum ModelHeuristic {
     static func isLikelyChatModel(id: String, provider: ProviderID) -> Bool {
         let lower = id.lowercased()
         switch provider {
-        case .ollama:
-            // Ollama only lists models the user has pulled; assume they're
-            // chat models unless one of the well-known non-chat suffixes is
-            // present.
-            return !nonChatHints.contains(where: lower.contains)
-        case .mistral:
+        case .ollama, .mistral, .openai, .deepseek:
             return !nonChatHints.contains(where: lower.contains)
         case .apple:
             return true

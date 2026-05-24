@@ -31,6 +31,8 @@ struct SettingsPanelView: View {
         switch selection {
         case .ollama:   OllamaSettingsView()
         case .mistral:  MistralSettingsView()
+        case .openai:   OpenAISettingsView()
+        case .deepseek: DeepSeekSettingsView()
         case .apple:    AppleSettingsView()
         }
     }
@@ -98,6 +100,12 @@ private struct ProvidersSidebar: View {
         case .mistral:
             return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
                 ? .green : .gray
+        case .openai:
+            return (!settings.openaiAPIKey.isEmpty && settings.openaiModel?.isEmpty == false)
+                ? .green : .gray
+        case .deepseek:
+            return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
+                ? .green : .gray
         case .apple:
             return AppleIntelligenceProvider.isReady ? .green : .gray
         }
@@ -109,24 +117,30 @@ private struct ProvidersSidebar: View {
 enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case ollama
     case mistral
+    case openai
+    case deepseek
     case apple
 
     var id: String { rawValue }
 
     init?(_ raw: String) {
         switch raw {
-        case "ollama":  self = .ollama
-        case "mistral": self = .mistral
-        case "apple":   self = .apple
-        default:        return nil
+        case "ollama":   self = .ollama
+        case "mistral":  self = .mistral
+        case "openai":   self = .openai
+        case "deepseek": self = .deepseek
+        case "apple":    self = .apple
+        default:         return nil
         }
     }
 
     var displayName: String {
         switch self {
-        case .ollama:  return "Ollama"
-        case .mistral: return "Mistral"
-        case .apple:   return "Apple Intelligence"
+        case .ollama:   return "Ollama"
+        case .mistral:  return "Mistral"
+        case .openai:   return "OpenAI"
+        case .deepseek: return "DeepSeek"
+        case .apple:    return "Apple Intelligence"
         }
     }
 }
