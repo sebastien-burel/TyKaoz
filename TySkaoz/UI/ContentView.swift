@@ -1,21 +1,32 @@
-//
-//  ContentView.swift
-//  TySkaoz
-//
-//  Created by Sébastien on 24/05/2026.
-//
-
 import SwiftUI
 
 struct ContentView: View {
+    @State private var conversations: [Conversation] = MockData.conversations
+    @State private var selection: Conversation.ID?
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationSplitView {
+            ConversationsListView(
+                conversations: $conversations,
+                selection: $selection
+            )
+            .navigationTitle("TyKaoz")
+        } detail: {
+            ChatView(conversation: selectedBinding)
         }
-        .padding()
+        .preferredColorScheme(.light)
+    }
+
+    private var selectedBinding: Binding<Conversation?> {
+        Binding(
+            get: { conversations.first(where: { $0.id == selection }) },
+            set: { newValue in
+                guard let newValue,
+                      let idx = conversations.firstIndex(where: { $0.id == newValue.id })
+                else { return }
+                conversations[idx] = newValue
+            }
+        )
     }
 }
 
