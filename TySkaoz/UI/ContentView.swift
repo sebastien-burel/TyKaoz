@@ -16,6 +16,11 @@ struct ContentView: View {
                 provider: ProviderFactory.make(from: settings),
                 providerID: settings.selectedProviderID
             )
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    ChatModelPicker()
+                }
+            }
         }
         .preferredColorScheme(.light)
     }
