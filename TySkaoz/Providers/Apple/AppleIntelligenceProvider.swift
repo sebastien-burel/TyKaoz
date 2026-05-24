@@ -5,6 +5,12 @@ struct AppleIntelligenceProvider: LLMProvider {
     let id: String = "apple"
     let displayName: String = "Apple Intelligence"
 
+    /// Synchronous convenience for UI hints (e.g. sidebar indicator).
+    /// The full `availability()` returns the precise reason of unavailability.
+    static var isReady: Bool {
+        SystemLanguageModel.default.isAvailable
+    }
+
     func availability() async -> ProviderAvailability {
         let model = SystemLanguageModel.default
         switch model.availability {
