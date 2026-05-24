@@ -11,24 +11,14 @@ final class ChatSession {
         case failed(message: String)
     }
 
-    typealias ChatStreamProvider = (URL, String, [OllamaChatMessage]) -> AsyncThrowingStream<String, Error>
-
     private(set) var state: State = .idle
 
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private let chatStream: ChatStreamProvider
-
-    init(chatStream: @escaping ChatStreamProvider = { baseURL, model, messages in
-        OllamaClient(baseURL: baseURL).chat(model: model, messages: messages)
-    }) {
-        self.chatStream = chatStream
-    }
 
     func send(
         text: String,
         in conversation: Binding<Conversation>,
-        model: String,
-        baseURL: URL
+        using provider: any LLMProvider
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, state != .streaming else { return }
@@ -41,14 +31,13 @@ final class ChatSession {
 
         let history = conversation.wrappedValue.messages
             .dropLast()
-            .map { OllamaChatMessage(role: $0.role.rawValue, content: $0.content) }
+            .map { ChatMessage($0) }
 
-        let stream = chatStream(baseURL, model, history)
         state = .streaming
 
         task = Task { [weak self] in
             do {
-                for try await delta in stream {
+                for try await delta in provider.chat(messages: history) {
                     if Task.isCancelled { break }
                     guard let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) else { break }
                     conversation.wrappedValue.messages[idx].content += delta

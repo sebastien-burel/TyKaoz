@@ -2,8 +2,8 @@ import SwiftUI
 
 struct ChatView: View {
     @Binding var conversation: Conversation?
-    let serverURL: URL?
-    let model: String?
+    let provider: (any LLMProvider)?
+    let providerID: String
 
     @State private var session = ChatSession()
     @State private var draft: String = ""
@@ -123,13 +123,18 @@ struct ChatView: View {
     }
 
     private var placeholder: String {
-        if serverURL == nil { return "Configurez le serveur Ollama dans les réglages…" }
-        if model == nil { return "Sélectionnez un modèle dans les réglages…" }
+        if provider == nil {
+            switch providerID {
+            case "ollama": return "Configurez Ollama (serveur + modèle) dans les réglages…"
+            case "apple":  return "Apple Intelligence indisponible — voir les réglages."
+            default:       return "Sélectionnez un provider dans les réglages…"
+            }
+        }
         return "Écrire un message…"
     }
 
     private var canType: Bool {
-        serverURL != nil && model != nil && conversation != nil && session.state != .streaming
+        provider != nil && conversation != nil && session.state != .streaming
     }
 
     private var canSend: Bool {
@@ -137,7 +142,7 @@ struct ChatView: View {
     }
 
     private func send() {
-        guard let url = serverURL, let model, conversation != nil else { return }
+        guard let provider, conversation != nil else { return }
         let text = draft
         draft = ""
         session.send(
@@ -146,8 +151,7 @@ struct ChatView: View {
                 get: { conversation! },
                 set: { conversation = $0 }
             ),
-            model: model,
-            baseURL: url
+            using: provider
         )
     }
 }

@@ -6,22 +6,16 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct ChatSessionTests {
-    private let baseURL = URL(string: "http://localhost:11434")!
 
     @Test
     func appendsUserAndStreamsAssistantContent() async throws {
-        let session = ChatSession { _, _, _ in
-            AsyncThrowingStream { continuation in
-                continuation.yield("Sa")
-                continuation.yield("lut")
-                continuation.finish()
-            }
-        }
+        let session = ChatSession()
+        let provider = MockProvider(deltas: ["Sa", "lut"])
 
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
 
-        session.send(text: "Bonjour", in: binding, model: "x", baseURL: baseURL)
+        session.send(text: "Bonjour", in: binding, using: provider)
         try await waitUntil { session.state == .idle }
 
         #expect(conversation.messages.count == 2)
@@ -33,11 +27,13 @@ struct ChatSessionTests {
 
     @Test
     func ignoresEmptyDraft() {
-        let session = ChatSession { _, _, _ in AsyncThrowingStream { $0.finish() } }
+        let session = ChatSession()
+        let provider = MockProvider(deltas: [])
+
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
 
-        session.send(text: "   ", in: binding, model: "x", baseURL: baseURL)
+        session.send(text: "   ", in: binding, using: provider)
 
         #expect(conversation.messages.isEmpty)
         #expect(session.state == .idle)
@@ -45,15 +41,13 @@ struct ChatSessionTests {
 
     @Test
     func surfacesFailure() async throws {
-        let session = ChatSession { _, _, _ in
-            AsyncThrowingStream { continuation in
-                continuation.finish(throwing: OllamaClientError.http(status: 500))
-            }
-        }
+        let provider = ThrowingProvider(error: OllamaClientError.http(status: 500))
+        let session = ChatSession()
+
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
 
-        session.send(text: "Bonjour", in: binding, model: "x", baseURL: baseURL)
+        session.send(text: "Bonjour", in: binding, using: provider)
         try await waitUntil {
             if case .failed = session.state { return true }
             return false
@@ -69,20 +63,13 @@ struct ChatSessionTests {
 
     @Test
     func stopPreservesPartialResponse() async throws {
-        // Stream that yields one delta then waits forever.
-        let session = ChatSession { _, _, _ in
-            AsyncThrowingStream { continuation in
-                continuation.yield("partial")
-                // Never finish; the test stops the session instead.
-            }
-        }
+        let provider = HangingProvider(initialDelta: "partial")
+        let session = ChatSession()
 
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
 
-        session.send(text: "Bonjour", in: binding, model: "x", baseURL: baseURL)
-
-        // Give the streaming task a moment to consume the first delta.
+        session.send(text: "Bonjour", in: binding, using: provider)
         try await waitUntil { conversation.messages.last?.content == "partial" }
 
         session.stop()
@@ -101,5 +88,34 @@ struct ChatSessionTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         Issue.record("waitUntil timed out")
+    }
+}
+
+private struct ThrowingProvider: LLMProvider {
+    let id = "throw"
+    let displayName = "Throwing"
+    let error: Error
+
+    func availability() async -> ProviderAvailability { .ready }
+
+    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish(throwing: error)
+        }
+    }
+}
+
+private struct HangingProvider: LLMProvider {
+    let id = "hang"
+    let displayName = "Hanging"
+    let initialDelta: String
+
+    func availability() async -> ProviderAvailability { .ready }
+
+    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(initialDelta)
+            // Never finishes; the test stops the session instead.
+        }
     }
 }

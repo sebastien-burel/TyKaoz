@@ -5,6 +5,10 @@ import Observation
 final class AppSettings {
     @ObservationIgnored private let defaults: UserDefaults
 
+    var selectedProviderID: String {
+        didSet { defaults.set(selectedProviderID, forKey: Keys.selectedProvider) }
+    }
+
     var serverURLString: String {
         didSet { defaults.set(serverURLString, forKey: Keys.serverURL) }
     }
@@ -28,11 +32,13 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.selectedProviderID = defaults.string(forKey: Keys.selectedProvider) ?? "ollama"
         self.serverURLString = defaults.string(forKey: Keys.serverURL) ?? "http://localhost:11434"
         self.selectedModel = defaults.string(forKey: Keys.selectedModel)
     }
 
     private enum Keys {
+        static let selectedProvider = "providers.selected"
         static let serverURL = "ollama.serverURL"
         static let selectedModel = "ollama.selectedModel"
     }

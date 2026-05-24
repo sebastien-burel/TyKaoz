@@ -13,8 +13,8 @@ struct ContentView: View {
         } detail: {
             ChatView(
                 conversation: selectedBinding,
-                serverURL: settings.serverURL,
-                model: settings.selectedModel
+                provider: ProviderFactory.make(from: settings),
+                providerID: settings.selectedProviderID
             )
         }
         .preferredColorScheme(.light)
