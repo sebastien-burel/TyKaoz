@@ -62,6 +62,16 @@ final class AppSettings {
         didSet { defaults.set(anthropicModel, forKey: Keys.anthropicModel) }
     }
 
+    // MARK: - Google
+
+    var googleAPIKey: String {
+        didSet { KeychainStore.set(googleAPIKey, account: KeychainAccounts.googleAPIKey) }
+    }
+
+    var googleModel: String? {
+        didSet { defaults.set(googleModel, forKey: Keys.googleModel) }
+    }
+
     // MARK: - DeepSeek
 
     var deepseekAPIKey: String {
@@ -90,6 +100,10 @@ final class AppSettings {
         didSet { defaults.set(anthropicCatalog, forKey: Keys.catalog(.anthropic)) }
     }
 
+    var googleCatalog: [String] = [] {
+        didSet { defaults.set(googleCatalog, forKey: Keys.catalog(.google)) }
+    }
+
     var deepseekCatalog: [String] = [] {
         didSet { defaults.set(deepseekCatalog, forKey: Keys.catalog(.deepseek)) }
     }
@@ -100,6 +114,7 @@ final class AppSettings {
         case .mistral:   return mistralCatalog
         case .openai:    return openaiCatalog
         case .anthropic: return anthropicCatalog
+        case .google:    return googleCatalog
         case .deepseek:  return deepseekCatalog
         case .apple:     return []
         }
@@ -111,6 +126,7 @@ final class AppSettings {
         case .mistral:   mistralCatalog = ids
         case .openai:    openaiCatalog = ids
         case .anthropic: anthropicCatalog = ids
+        case .google:    googleCatalog = ids
         case .deepseek:  deepseekCatalog = ids
         case .apple:     break
         }
@@ -134,6 +150,10 @@ final class AppSettings {
         didSet { defaults.set(Array(enabledAnthropicModels), forKey: Keys.enabledModels(for: .anthropic)) }
     }
 
+    var enabledGoogleModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledGoogleModels), forKey: Keys.enabledModels(for: .google)) }
+    }
+
     var enabledDeepSeekModels: Set<String> = [] {
         didSet { defaults.set(Array(enabledDeepSeekModels), forKey: Keys.enabledModels(for: .deepseek)) }
     }
@@ -144,6 +164,7 @@ final class AppSettings {
         case .mistral:   return enabledMistralModels
         case .openai:    return enabledOpenAIModels
         case .anthropic: return enabledAnthropicModels
+        case .google:    return enabledGoogleModels
         case .deepseek:  return enabledDeepSeekModels
         case .apple:     return []
         }
@@ -163,6 +184,9 @@ final class AppSettings {
         case .anthropic:
             if enabled { enabledAnthropicModels.insert(modelID) } else { enabledAnthropicModels.remove(modelID) }
             constrainActive(&anthropicModel, to: enabledAnthropicModels)
+        case .google:
+            if enabled { enabledGoogleModels.insert(modelID) } else { enabledGoogleModels.remove(modelID) }
+            constrainActive(&googleModel, to: enabledGoogleModels)
         case .deepseek:
             if enabled { enabledDeepSeekModels.insert(modelID) } else { enabledDeepSeekModels.remove(modelID) }
             constrainActive(&deepseekModel, to: enabledDeepSeekModels)
@@ -190,17 +214,21 @@ final class AppSettings {
         self.openaiModel = defaults.string(forKey: Keys.openaiModel)
         self.anthropicAPIKey = KeychainStore.get(account: KeychainAccounts.anthropicAPIKey) ?? ""
         self.anthropicModel = defaults.string(forKey: Keys.anthropicModel)
+        self.googleAPIKey = KeychainStore.get(account: KeychainAccounts.googleAPIKey) ?? ""
+        self.googleModel = defaults.string(forKey: Keys.googleModel)
         self.deepseekAPIKey = KeychainStore.get(account: KeychainAccounts.deepseekAPIKey) ?? ""
         self.deepseekModel = defaults.string(forKey: Keys.deepseekModel)
         self.ollamaCatalog = defaults.array(forKey: Keys.catalog(.ollama)) as? [String] ?? []
         self.mistralCatalog = defaults.array(forKey: Keys.catalog(.mistral)) as? [String] ?? []
         self.openaiCatalog = defaults.array(forKey: Keys.catalog(.openai)) as? [String] ?? []
         self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
+        self.googleCatalog = defaults.array(forKey: Keys.catalog(.google)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
         self.enabledOllamaModels = Set(defaults.array(forKey: Keys.enabledModels(for: .ollama)) as? [String] ?? [])
         self.enabledMistralModels = Set(defaults.array(forKey: Keys.enabledModels(for: .mistral)) as? [String] ?? [])
         self.enabledOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .openai)) as? [String] ?? [])
         self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
+        self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
     }
 
@@ -211,6 +239,7 @@ final class AppSettings {
         static let mistralModel = "mistral.selectedModel"
         static let openaiModel = "openai.selectedModel"
         static let anthropicModel = "anthropic.selectedModel"
+        static let googleModel = "google.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
 
         static func enabledModels(for provider: ProviderID) -> String {
@@ -225,6 +254,7 @@ final class AppSettings {
         static let mistralAPIKey = "mistral.apiKey"
         static let openaiAPIKey = "openai.apiKey"
         static let anthropicAPIKey = "anthropic.apiKey"
+        static let googleAPIKey = "google.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
     }
 }

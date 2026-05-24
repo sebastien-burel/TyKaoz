@@ -33,6 +33,7 @@ struct SettingsPanelView: View {
         case .mistral:   MistralSettingsView()
         case .openai:    OpenAISettingsView()
         case .anthropic: AnthropicSettingsView()
+        case .google:    GoogleSettingsView()
         case .deepseek:  DeepSeekSettingsView()
         case .apple:     AppleSettingsView()
         }
@@ -107,6 +108,9 @@ private struct ProvidersSidebar: View {
         case .anthropic:
             return (!settings.anthropicAPIKey.isEmpty && settings.anthropicModel?.isEmpty == false)
                 ? .green : .gray
+        case .google:
+            return (!settings.googleAPIKey.isEmpty && settings.googleModel?.isEmpty == false)
+                ? .green : .gray
         case .deepseek:
             return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
                 ? .green : .gray
@@ -123,6 +127,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case mistral
     case openai
     case anthropic
+    case google
     case deepseek
     case apple
 
@@ -134,6 +139,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case "mistral":   self = .mistral
         case "openai":    self = .openai
         case "anthropic": self = .anthropic
+        case "google":    self = .google
         case "deepseek":  self = .deepseek
         case "apple":     self = .apple
         default:          return nil
@@ -146,6 +152,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case .mistral:   return "Mistral"
         case .openai:    return "OpenAI"
         case .anthropic: return "Anthropic"
+        case .google:    return "Google Gemini"
         case .deepseek:  return "DeepSeek"
         case .apple:     return "Apple Intelligence"
         }

@@ -34,6 +34,13 @@ enum ProviderFactory {
             else { return nil }
             return AnthropicProvider(apiKey: settings.anthropicAPIKey, model: model)
 
+        case "google":
+            guard !settings.googleAPIKey.isEmpty,
+                  let model = settings.googleModel,
+                  !model.isEmpty
+            else { return nil }
+            return GoogleProvider(apiKey: settings.googleAPIKey, model: model)
+
         case "deepseek":
             guard !settings.deepseekAPIKey.isEmpty,
                   let model = settings.deepseekModel,
