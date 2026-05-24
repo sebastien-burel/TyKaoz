@@ -4,7 +4,6 @@ struct OllamaSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var state: SettingsConnectionState = .idle
-    @State private var models: [OllamaModel] = []
 
     var body: some View {
         @Bindable var settings = settings
@@ -25,21 +24,11 @@ struct OllamaSettingsView: View {
                 }
             }
 
-            Section("Modèle") {
-                if models.isEmpty {
-                    Text("Testez la connexion pour récupérer les modèles disponibles.")
-                        .font(Brand.Fonts.body(11))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("Modèle", selection: $settings.selectedModel) {
-                        Text("Aucun").tag(String?.none)
-                        ForEach(models) { model in
-                            Text(model.name).tag(String?.some(model.name))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-            }
+            ModelCurationSummary(
+                provider: .ollama,
+                allModelIDs: settings.ollamaCatalog,
+                activeModel: $settings.selectedModel
+            )
 
             Section {
                 UseAsActiveButton(providerID: .ollama)
@@ -57,13 +46,8 @@ struct OllamaSettingsView: View {
         let client = OllamaClient(baseURL: url)
         do {
             let listed = try await client.listModels()
-            models = listed
+            settings.setCatalog(listed.map { $0.name }, for: .ollama)
             state = .success(count: listed.count)
-            if let current = settings.selectedModel, listed.contains(where: { $0.name == current }) {
-                // keep
-            } else {
-                settings.selectedModel = listed.first?.name
-            }
         } catch let error as OllamaClientError {
             state = .failure(message: error.errorDescription ?? "Erreur.")
         } catch {

@@ -4,7 +4,6 @@ struct MistralSettingsView: View {
     @Environment(AppSettings.self) private var settings
 
     @State private var state: SettingsConnectionState = .idle
-    @State private var models: [MistralModelsResponse.Model] = []
 
     var body: some View {
         @Bindable var settings = settings
@@ -29,21 +28,11 @@ struct MistralSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Section("Modèle") {
-                if models.isEmpty {
-                    Text("Testez la connexion pour récupérer les modèles disponibles.")
-                        .font(Brand.Fonts.body(11))
-                        .foregroundStyle(.secondary)
-                } else {
-                    Picker("Modèle", selection: $settings.mistralModel) {
-                        Text("Aucun").tag(String?.none)
-                        ForEach(models) { model in
-                            Text(model.id).tag(String?.some(model.id))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-            }
+            ModelCurationSummary(
+                provider: .mistral,
+                allModelIDs: settings.mistralCatalog,
+                activeModel: $settings.mistralModel
+            )
 
             Section {
                 UseAsActiveButton(providerID: .mistral)
@@ -61,13 +50,8 @@ struct MistralSettingsView: View {
         let client = MistralClient(apiKey: settings.mistralAPIKey)
         do {
             let listed = try await client.listModels()
-            models = listed
+            settings.setCatalog(listed.map(\.id).sorted(), for: .mistral)
             state = .success(count: listed.count)
-            if let current = settings.mistralModel, listed.contains(where: { $0.id == current }) {
-                // keep
-            } else {
-                settings.mistralModel = listed.first?.id
-            }
         } catch let error as MistralClientError {
             state = .failure(message: error.errorDescription ?? "Erreur.")
         } catch {
