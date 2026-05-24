@@ -50,6 +50,8 @@ struct ChatModelPicker: View {
             return formatLabel(provider, model: settings.mistralModel)
         case .openai:
             return formatLabel(provider, model: settings.openaiModel)
+        case .anthropic:
+            return formatLabel(provider, model: settings.anthropicModel)
         case .deepseek:
             return formatLabel(provider, model: settings.deepseekModel)
         }
@@ -104,22 +106,24 @@ struct ChatModelPicker: View {
     private func isActive(provider: ProviderID, model: String?) -> Bool {
         guard settings.selectedProviderID == provider.rawValue else { return false }
         switch provider {
-        case .apple:    return true
-        case .ollama:   return settings.selectedModel == model
-        case .mistral:  return settings.mistralModel == model
-        case .openai:   return settings.openaiModel == model
-        case .deepseek: return settings.deepseekModel == model
+        case .apple:     return true
+        case .ollama:    return settings.selectedModel == model
+        case .mistral:   return settings.mistralModel == model
+        case .openai:    return settings.openaiModel == model
+        case .anthropic: return settings.anthropicModel == model
+        case .deepseek:  return settings.deepseekModel == model
         }
     }
 
     private func activate(provider: ProviderID, model: String?) {
         settings.selectedProviderID = provider.rawValue
         switch provider {
-        case .ollama:   settings.selectedModel = model
-        case .mistral:  settings.mistralModel = model
-        case .openai:   settings.openaiModel = model
-        case .deepseek: settings.deepseekModel = model
-        case .apple:    break
+        case .ollama:    settings.selectedModel = model
+        case .mistral:   settings.mistralModel = model
+        case .openai:    settings.openaiModel = model
+        case .anthropic: settings.anthropicModel = model
+        case .deepseek:  settings.deepseekModel = model
+        case .apple:     break
         }
     }
 }

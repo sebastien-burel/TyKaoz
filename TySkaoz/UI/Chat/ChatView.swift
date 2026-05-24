@@ -125,12 +125,13 @@ struct ChatView: View {
     private var placeholder: String {
         if provider == nil {
             switch providerID {
-            case "ollama":   return "Configurez Ollama (serveur + modèle) dans les réglages…"
-            case "mistral":  return "Renseignez votre clé Mistral et choisissez un modèle…"
-            case "openai":   return "Renseignez votre clé OpenAI et choisissez un modèle…"
-            case "deepseek": return "Renseignez votre clé DeepSeek et choisissez un modèle…"
-            case "apple":    return "Apple Intelligence indisponible — voir les réglages."
-            default:         return "Sélectionnez un provider dans les réglages…"
+            case "ollama":    return "Configurez Ollama (serveur + modèle) dans les réglages…"
+            case "mistral":   return "Renseignez votre clé Mistral et choisissez un modèle…"
+            case "openai":    return "Renseignez votre clé OpenAI et choisissez un modèle…"
+            case "anthropic": return "Renseignez votre clé Anthropic et choisissez un modèle…"
+            case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
+            case "apple":     return "Apple Intelligence indisponible — voir les réglages."
+            default:          return "Sélectionnez un provider dans les réglages…"
             }
         }
         return "Écrire un message…"

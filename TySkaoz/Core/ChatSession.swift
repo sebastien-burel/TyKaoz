@@ -49,6 +49,8 @@ final class ChatSession {
                 self?.state = .failed(message: error.errorDescription ?? "Erreur.")
             } catch let error as OpenAICompatibleError {
                 self?.state = .failed(message: error.errorDescription ?? "Erreur.")
+            } catch let error as AnthropicClientError {
+                self?.state = .failed(message: error.errorDescription ?? "Erreur.")
             } catch {
                 self?.state = .failed(message: error.localizedDescription)
             }

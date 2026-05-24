@@ -27,6 +27,13 @@ enum ProviderFactory {
             else { return nil }
             return OpenAIProvider(apiKey: settings.openaiAPIKey, model: model)
 
+        case "anthropic":
+            guard !settings.anthropicAPIKey.isEmpty,
+                  let model = settings.anthropicModel,
+                  !model.isEmpty
+            else { return nil }
+            return AnthropicProvider(apiKey: settings.anthropicAPIKey, model: model)
+
         case "deepseek":
             guard !settings.deepseekAPIKey.isEmpty,
                   let model = settings.deepseekModel,

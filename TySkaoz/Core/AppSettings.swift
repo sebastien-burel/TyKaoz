@@ -52,6 +52,16 @@ final class AppSettings {
         didSet { defaults.set(openaiModel, forKey: Keys.openaiModel) }
     }
 
+    // MARK: - Anthropic
+
+    var anthropicAPIKey: String {
+        didSet { KeychainStore.set(anthropicAPIKey, account: KeychainAccounts.anthropicAPIKey) }
+    }
+
+    var anthropicModel: String? {
+        didSet { defaults.set(anthropicModel, forKey: Keys.anthropicModel) }
+    }
+
     // MARK: - DeepSeek
 
     var deepseekAPIKey: String {
@@ -76,27 +86,33 @@ final class AppSettings {
         didSet { defaults.set(openaiCatalog, forKey: Keys.catalog(.openai)) }
     }
 
+    var anthropicCatalog: [String] = [] {
+        didSet { defaults.set(anthropicCatalog, forKey: Keys.catalog(.anthropic)) }
+    }
+
     var deepseekCatalog: [String] = [] {
         didSet { defaults.set(deepseekCatalog, forKey: Keys.catalog(.deepseek)) }
     }
 
     func catalog(for provider: ProviderID) -> [String] {
         switch provider {
-        case .ollama:   return ollamaCatalog
-        case .mistral:  return mistralCatalog
-        case .openai:   return openaiCatalog
-        case .deepseek: return deepseekCatalog
-        case .apple:    return []
+        case .ollama:    return ollamaCatalog
+        case .mistral:   return mistralCatalog
+        case .openai:    return openaiCatalog
+        case .anthropic: return anthropicCatalog
+        case .deepseek:  return deepseekCatalog
+        case .apple:     return []
         }
     }
 
     func setCatalog(_ ids: [String], for provider: ProviderID) {
         switch provider {
-        case .ollama:   ollamaCatalog = ids
-        case .mistral:  mistralCatalog = ids
-        case .openai:   openaiCatalog = ids
-        case .deepseek: deepseekCatalog = ids
-        case .apple:    break
+        case .ollama:    ollamaCatalog = ids
+        case .mistral:   mistralCatalog = ids
+        case .openai:    openaiCatalog = ids
+        case .anthropic: anthropicCatalog = ids
+        case .deepseek:  deepseekCatalog = ids
+        case .apple:     break
         }
     }
 
@@ -114,17 +130,22 @@ final class AppSettings {
         didSet { defaults.set(Array(enabledOpenAIModels), forKey: Keys.enabledModels(for: .openai)) }
     }
 
+    var enabledAnthropicModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledAnthropicModels), forKey: Keys.enabledModels(for: .anthropic)) }
+    }
+
     var enabledDeepSeekModels: Set<String> = [] {
         didSet { defaults.set(Array(enabledDeepSeekModels), forKey: Keys.enabledModels(for: .deepseek)) }
     }
 
     func enabledModels(for provider: ProviderID) -> Set<String> {
         switch provider {
-        case .ollama:   return enabledOllamaModels
-        case .mistral:  return enabledMistralModels
-        case .openai:   return enabledOpenAIModels
-        case .deepseek: return enabledDeepSeekModels
-        case .apple:    return []
+        case .ollama:    return enabledOllamaModels
+        case .mistral:   return enabledMistralModels
+        case .openai:    return enabledOpenAIModels
+        case .anthropic: return enabledAnthropicModels
+        case .deepseek:  return enabledDeepSeekModels
+        case .apple:     return []
         }
     }
 
@@ -139,6 +160,9 @@ final class AppSettings {
         case .openai:
             if enabled { enabledOpenAIModels.insert(modelID) } else { enabledOpenAIModels.remove(modelID) }
             constrainActive(&openaiModel, to: enabledOpenAIModels)
+        case .anthropic:
+            if enabled { enabledAnthropicModels.insert(modelID) } else { enabledAnthropicModels.remove(modelID) }
+            constrainActive(&anthropicModel, to: enabledAnthropicModels)
         case .deepseek:
             if enabled { enabledDeepSeekModels.insert(modelID) } else { enabledDeepSeekModels.remove(modelID) }
             constrainActive(&deepseekModel, to: enabledDeepSeekModels)
@@ -164,15 +188,19 @@ final class AppSettings {
         self.mistralModel = defaults.string(forKey: Keys.mistralModel)
         self.openaiAPIKey = KeychainStore.get(account: KeychainAccounts.openaiAPIKey) ?? ""
         self.openaiModel = defaults.string(forKey: Keys.openaiModel)
+        self.anthropicAPIKey = KeychainStore.get(account: KeychainAccounts.anthropicAPIKey) ?? ""
+        self.anthropicModel = defaults.string(forKey: Keys.anthropicModel)
         self.deepseekAPIKey = KeychainStore.get(account: KeychainAccounts.deepseekAPIKey) ?? ""
         self.deepseekModel = defaults.string(forKey: Keys.deepseekModel)
         self.ollamaCatalog = defaults.array(forKey: Keys.catalog(.ollama)) as? [String] ?? []
         self.mistralCatalog = defaults.array(forKey: Keys.catalog(.mistral)) as? [String] ?? []
         self.openaiCatalog = defaults.array(forKey: Keys.catalog(.openai)) as? [String] ?? []
+        self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
         self.enabledOllamaModels = Set(defaults.array(forKey: Keys.enabledModels(for: .ollama)) as? [String] ?? [])
         self.enabledMistralModels = Set(defaults.array(forKey: Keys.enabledModels(for: .mistral)) as? [String] ?? [])
         self.enabledOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .openai)) as? [String] ?? [])
+        self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
     }
 
@@ -182,6 +210,7 @@ final class AppSettings {
         static let selectedModel = "ollama.selectedModel"
         static let mistralModel = "mistral.selectedModel"
         static let openaiModel = "openai.selectedModel"
+        static let anthropicModel = "anthropic.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
 
         static func enabledModels(for provider: ProviderID) -> String {
@@ -195,6 +224,7 @@ final class AppSettings {
     private enum KeychainAccounts {
         static let mistralAPIKey = "mistral.apiKey"
         static let openaiAPIKey = "openai.apiKey"
+        static let anthropicAPIKey = "anthropic.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
     }
 }
