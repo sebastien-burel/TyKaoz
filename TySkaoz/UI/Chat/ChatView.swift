@@ -1,4 +1,5 @@
 import SwiftUI
+import MarkdownUI
 
 struct ChatView: View {
     @Binding var conversation: Conversation?
@@ -167,9 +168,23 @@ private struct MessageBubble: View {
     var body: some View {
         HStack {
             if message.role == .user { Spacer(minLength: 40) }
-            Text(displayText)
-                .font(Brand.Fonts.body(14))
-                .foregroundStyle(textColor)
+            Markdown(displayText)
+                .markdownTextStyle {
+                    FontSize(14)
+                    ForegroundColor(textColor)
+                }
+                .markdownBlockStyle(\.codeBlock) { configuration in
+                    configuration.label
+                        .padding(10)
+                        .background(codeBackground)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .markdownTextStyle {
+                            FontFamilyVariant(.monospaced)
+                            FontSize(12)
+                            ForegroundColor(textColor)
+                        }
+                }
+                .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(background)
@@ -178,8 +193,27 @@ private struct MessageBubble: View {
                         .stroke(borderColor, lineWidth: 1)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .contextMenu {
+                    Button("Copier le message") { copyToPasteboard(message.content) }
+                        .disabled(message.content.isEmpty)
+                }
             if message.role == .assistant { Spacer(minLength: 40) }
         }
+    }
+
+    /// Subtle inset color for fenced code blocks; contrasted with the bubble
+    /// background.
+    private var codeBackground: Color {
+        switch message.role {
+        case .user:      return Brand.Colors.ink.opacity(0.4)
+        case .assistant: return Brand.Colors.slate.opacity(0.08)
+        }
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
     }
 
     private var displayText: String {
