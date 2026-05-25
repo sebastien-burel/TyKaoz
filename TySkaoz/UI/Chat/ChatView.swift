@@ -2,6 +2,8 @@ import SwiftUI
 import MarkdownUI
 
 struct ChatView: View {
+    @Environment(ConversationStore.self) private var store
+
     @Binding var conversation: Conversation?
     let provider: (any LLMProvider)?
     let providerID: String
@@ -25,6 +27,30 @@ struct ChatView: View {
             }
         }
         .background(Brand.Colors.paper)
+        .onChange(of: session.state) { oldState, newState in
+            if oldState == .streaming, newState == .idle {
+                autoRenameIfNeeded()
+            }
+        }
+    }
+
+    /// If the conversation still has its default title and just got its
+    /// first complete exchange (1 user + 1 assistant), kick off a background
+    /// title generation via the same provider. Snapshot the conversation so
+    /// we update the right one even if the user navigates away.
+    private func autoRenameIfNeeded() {
+        guard let conv = conversation, let provider,
+              conv.title == ConversationTitler.defaultTitle,
+              conv.messages.count == 2
+        else { return }
+
+        let snapshot = conv
+        Task {
+            guard let title = await ConversationTitler.generate(from: snapshot, using: provider) else { return }
+            var updated = snapshot
+            updated.title = title
+            store.update(updated)
+        }
     }
 
     @ViewBuilder

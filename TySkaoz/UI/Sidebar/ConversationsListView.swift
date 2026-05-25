@@ -101,7 +101,7 @@ struct ConversationsListView: View {
     }
 
     private func createConversation() {
-        let new = Conversation(title: "Nouvelle conversation")
+        let new = Conversation(title: ConversationTitler.defaultTitle)
         store.add(new)
         selection = new.id
     }
