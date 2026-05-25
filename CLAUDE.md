@@ -94,7 +94,11 @@ and extensible toward RAG, without over-engineering.
 - **No external dependencies** without explicit approval. Prefer the stdlib /
   system frameworks. Each added package must be justified.
 - **State:** keep view models thin; business logic in plain testable types.
-- **Tests:** XCTest. New backend logic and parsing get unit tests.
+- **Tests:** Swift Testing (`import Testing`, `@Test`, `#expect`) — c'est
+  ce que le template Xcode 26 ship et c'est ce qu'on utilise dans tout le
+  projet. Les UI tests (`TySkaozUITests`) restent en XCTest, c'est ce que
+  le template UI testing fournit. New backend logic and parsing get unit
+  tests.
 
 ---
 
