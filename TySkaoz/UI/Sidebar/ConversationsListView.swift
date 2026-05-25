@@ -7,25 +7,21 @@ struct ConversationsListView: View {
     @State private var editingID: Conversation.ID?
     @State private var editedTitle: String = ""
     @FocusState private var titleFocused: Bool
+    @FocusState private var listFocused: Bool
 
     @State private var deletionTarget: Conversation?
 
     var body: some View {
         VStack(spacing: 0) {
-            List(selection: $selection) {
-                ForEach(store.conversations) { conversation in
-                    row(for: conversation)
-                        .padding(.vertical, 4)
-                        .tag(conversation.id)
-                        .contextMenu {
-                            Button("Renommer") { beginEditing(conversation) }
-                            Button("Supprimer", role: .destructive) {
-                                deletionTarget = conversation
-                            }
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(store.conversations) { conversation in
+                        rowContainer(for: conversation)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
             }
-            .scrollContentBackground(.hidden)
 
             Divider()
 
@@ -43,6 +39,9 @@ struct ConversationsListView: View {
         }
         .background(Brand.Colors.paper)
         .frame(minWidth: 220)
+        .focusable()
+        .focusEffectDisabled()
+        .focused($listFocused)
         .toolbar {
             ToolbarItem {
                 Button(action: createConversation) {
@@ -72,6 +71,29 @@ struct ConversationsListView: View {
         } message: { conv in
             Text("« \(conv.title) » sera supprimée définitivement.")
         }
+    }
+
+    private func rowContainer(for conversation: Conversation) -> some View {
+        row(for: conversation)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(selection == conversation.id ? Brand.Colors.slate.opacity(0.12) : .clear)
+            )
+            .contentShape(Rectangle())
+            .padding(.horizontal, 6)
+            .onTapGesture {
+                selection = conversation.id
+                listFocused = true
+            }
+            .contextMenu {
+                Button("Renommer") { beginEditing(conversation) }
+                Button("Supprimer", role: .destructive) {
+                    deletionTarget = conversation
+                }
+            }
     }
 
     @ViewBuilder
@@ -104,6 +126,7 @@ struct ConversationsListView: View {
         let new = Conversation(title: ConversationTitler.defaultTitle)
         store.add(new)
         selection = new.id
+        listFocused = true
     }
 
     private func beginEditing(_ conversation: Conversation) {
