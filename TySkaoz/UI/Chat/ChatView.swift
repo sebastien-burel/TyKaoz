@@ -196,8 +196,34 @@ private struct MessageBubble: View {
             if message.role == .user { Spacer(minLength: 40) }
             Markdown(displayText)
                 .markdownTextStyle {
+                    FontFamily(.custom("Inter Tight"))
                     FontSize(14)
                     ForegroundColor(textColor)
+                }
+                .markdownBlockStyle(\.paragraph) { configuration in
+                    configuration.label
+                        .lineSpacing(4)
+                        .padding(.bottom, 4)
+                }
+                .markdownBlockStyle(\.listItem) { configuration in
+                    configuration.label
+                        .lineSpacing(4)
+                        .padding(.bottom, 2)
+                }
+                .markdownBlockStyle(\.heading1) { configuration in
+                    configuration.label
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+                }
+                .markdownBlockStyle(\.heading2) { configuration in
+                    configuration.label
+                        .padding(.top, 6)
+                        .padding(.bottom, 3)
+                }
+                .markdownBlockStyle(\.heading3) { configuration in
+                    configuration.label
+                        .padding(.top, 4)
+                        .padding(.bottom, 2)
                 }
                 .markdownBlockStyle(\.codeBlock) { configuration in
                     configuration.label
@@ -205,7 +231,7 @@ private struct MessageBubble: View {
                         .background(codeBackground)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .markdownTextStyle {
-                            FontFamilyVariant(.monospaced)
+                            FontFamily(.custom("JetBrains Mono"))
                             FontSize(12)
                             ForegroundColor(textColor)
                         }

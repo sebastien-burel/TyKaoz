@@ -13,11 +13,17 @@ enum Brand {
     }
 
     enum Fonts {
-        // Polices custom (Fraunces, Inter Tight, JetBrains Mono) à intégrer plus tard.
-        // Placeholders via les designs sémantiques du système.
-        static func title(_ size: CGFloat) -> Font { .system(size: size, design: .serif) }
-        static func body(_ size: CGFloat) -> Font  { .system(size: size, design: .default) }
-        static func mono(_ size: CGFloat) -> Font  { .system(size: size, design: .monospaced) }
+        // Custom fonts shipped with the app (TySkaoz/Fonts/), auto-registered
+        // by macOS via the INFOPLIST_KEY_ATSApplicationFontsPath build
+        // setting. We reference the family names embedded in the variable
+        // font files.
+        private static let titleFamily = "Fraunces"
+        private static let bodyFamily  = "Inter Tight"
+        private static let monoFamily  = "JetBrains Mono"
+
+        static func title(_ size: CGFloat) -> Font { .custom(titleFamily, size: size) }
+        static func body(_ size: CGFloat) -> Font  { .custom(bodyFamily, size: size) }
+        static func mono(_ size: CGFloat) -> Font  { .custom(monoFamily, size: size) }
     }
 
     static let accentGradient = LinearGradient(
