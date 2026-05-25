@@ -31,17 +31,17 @@ struct AppleIntelligenceProvider: LLMProvider {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
-                    // Split last user message from prior history. If for some
-                    // reason there's no user message at the end (defensive),
-                    // bail with a clear error.
-                    guard let lastUser = messages.last(where: { $0.role == .user }) else {
+                    guard let lastUserIdx = messages.lastIndex(where: { $0.role == .user }) else {
                         throw AppleIntelligenceError.noUserMessage
                     }
-                    let history = Array(messages.prefix(upTo: messages.lastIndex(where: { $0.role == .user })!))
+                    let priorHistory = Array(messages[..<lastUserIdx])
+                    let lastUser = messages[lastUserIdx]
 
-                    let session = LanguageModelSession(
-                        instructions: Self.buildInstructions(history: history)
+                    let transcript = Self.buildTranscript(
+                        systemPrompt: Self.defaultInstructions,
+                        history: priorHistory
                     )
+                    let session = LanguageModelSession(transcript: transcript)
 
                     var emitted = 0
                     let stream = session.streamResponse(to: lastUser.content)
@@ -64,27 +64,61 @@ struct AppleIntelligenceProvider: LLMProvider {
         }
     }
 
-    /// Builds an `Instructions` value that replays prior turns. For Phase 5 we
-    /// embed the history textually; a future iteration may switch to a real
-    /// `Transcript` for cleaner semantics.
-    private static func buildInstructions(history: [ChatMessage]) -> Instructions {
-        if history.isEmpty {
-            return Instructions("Tu es un assistant utile. Réponds clairement et en français par défaut.")
-        }
-        var lines: [String] = [
-            "Tu es un assistant utile. Réponds clairement et en français par défaut.",
-            "Voici l'historique de la conversation jusqu'ici :"
-        ]
+    // MARK: - Transcript construction
+
+    private static let defaultInstructions =
+        "Tu es un assistant utile. Réponds clairement et en français par défaut."
+
+    private static func buildTranscript(
+        systemPrompt: String,
+        history: [ChatMessage]
+    ) -> Transcript {
+        var entries: [Transcript.Entry] = []
+
+        entries.append(.instructions(
+            Transcript.Instructions(
+                id: UUID().uuidString,
+                segments: [.text(textSegment(systemPrompt))],
+                toolDefinitions: []
+            )
+        ))
+
         for message in history {
-            let prefix: String
+            let segment: Transcript.Segment = .text(textSegment(message.content))
             switch message.role {
-            case .user:      prefix = "Utilisateur"
-            case .assistant: prefix = "Assistant"
-            case .system:    prefix = "Système"
+            case .user:
+                entries.append(.prompt(
+                    Transcript.Prompt(
+                        id: UUID().uuidString,
+                        segments: [segment],
+                        options: GenerationOptions(),
+                        responseFormat: nil
+                    )
+                ))
+            case .assistant:
+                entries.append(.response(
+                    Transcript.Response(
+                        id: UUID().uuidString,
+                        assetIDs: [],
+                        segments: [segment]
+                    )
+                ))
+            case .system:
+                entries.append(.instructions(
+                    Transcript.Instructions(
+                        id: UUID().uuidString,
+                        segments: [segment],
+                        toolDefinitions: []
+                    )
+                ))
             }
-            lines.append("\(prefix) : \(message.content)")
         }
-        return Instructions(lines.joined(separator: "\n"))
+
+        return Transcript(entries: entries)
+    }
+
+    private static func textSegment(_ content: String) -> Transcript.TextSegment {
+        Transcript.TextSegment(id: UUID().uuidString, content: content)
     }
 }
 
