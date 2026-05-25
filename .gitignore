@@ -12,7 +12,7 @@ xcuserdata/
 .swiftpm/
 .build/
 Packages/
-Package.resolved
+# Package.resolved is committed for app reproducibility (figé per-checkout).
 
 # CocoaPods (au cas où)
 Pods/
