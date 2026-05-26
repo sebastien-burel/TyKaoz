@@ -31,7 +31,7 @@ final class ChatSession {
 
         let history = conversation.wrappedValue.messages
             .dropLast()
-            .map { ChatMessage($0) }
+            .compactMap { ChatMessage($0) }
 
         state = .streaming
 

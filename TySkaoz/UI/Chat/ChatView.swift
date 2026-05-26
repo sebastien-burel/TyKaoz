@@ -257,8 +257,12 @@ private struct MessageBubble: View {
     /// background.
     private var codeBackground: Color {
         switch message.role {
-        case .user:      return Brand.Colors.ink.opacity(0.4)
-        case .assistant: return Brand.Colors.slate.opacity(0.08)
+        case .user:
+            return Brand.Colors.ink.opacity(0.4)
+        case .assistant, .toolCall, .toolResult:
+            // Tool messages will get their own dedicated card view in Bloc 6;
+            // this branch keeps the switch exhaustive in the meantime.
+            return Brand.Colors.slate.opacity(0.08)
         }
     }
 
@@ -274,22 +278,22 @@ private struct MessageBubble: View {
 
     private var background: some ShapeStyle {
         switch message.role {
-        case .user:      return AnyShapeStyle(Brand.Colors.slate)
-        case .assistant: return AnyShapeStyle(Color.white)
+        case .user:                              return AnyShapeStyle(Brand.Colors.slate)
+        case .assistant, .toolCall, .toolResult: return AnyShapeStyle(Color.white)
         }
     }
 
     private var textColor: Color {
         switch message.role {
-        case .user:      return Brand.Colors.paper
-        case .assistant: return Brand.Colors.ink
+        case .user:                              return Brand.Colors.paper
+        case .assistant, .toolCall, .toolResult: return Brand.Colors.ink
         }
     }
 
     private var borderColor: Color {
         switch message.role {
-        case .user:      return .clear
-        case .assistant: return Brand.Colors.slate.opacity(0.15)
+        case .user:                              return .clear
+        case .assistant, .toolCall, .toolResult: return Brand.Colors.slate.opacity(0.15)
         }
     }
 }

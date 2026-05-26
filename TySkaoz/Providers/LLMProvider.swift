@@ -30,13 +30,16 @@ struct ChatMessage: Hashable, Sendable {
 }
 
 extension ChatMessage {
-    /// Convenience: map from a stored Message (which only has user/assistant
-    /// roles today) to a ChatMessage.
-    init(_ message: Message) {
+    /// Convenience: map a stored Message to a ChatMessage. Returns nil for
+    /// `.toolCall` / `.toolResult` entries — those aren't representable in
+    /// the current text-only ChatMessage shape and will be threaded through
+    /// the providers separately in Bloc 3.
+    init?(_ message: Message) {
         let role: Role
         switch message.role {
-        case .user:      role = .user
-        case .assistant: role = .assistant
+        case .user:                  role = .user
+        case .assistant:             role = .assistant
+        case .toolCall, .toolResult: return nil
         }
         self.init(role: role, content: message.content)
     }
