@@ -30,6 +30,13 @@ struct Message: Identifiable, Hashable, Codable {
     /// tool, invalid args). The LLM still receives the content as feedback.
     var toolIsError: Bool?
 
+    /// Some "thinking" models (DeepSeek v4, etc.) emit a chain of thought
+    /// in a separate `reasoning_content` field. The provider expects that
+    /// content to be sent back unchanged in the next turn's history,
+    /// otherwise it refuses (HTTP 400). We don't display it (yet) but
+    /// persist it so subsequent rounds round-trip correctly.
+    var reasoningContent: String?
+
     init(
         id: UUID = UUID(),
         role: Role,
@@ -37,7 +44,8 @@ struct Message: Identifiable, Hashable, Codable {
         timestamp: Date = .now,
         toolCallID: String? = nil,
         toolName: String? = nil,
-        toolIsError: Bool? = nil
+        toolIsError: Bool? = nil,
+        reasoningContent: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -46,5 +54,6 @@ struct Message: Identifiable, Hashable, Codable {
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.toolIsError = toolIsError
+        self.reasoningContent = reasoningContent
     }
 }

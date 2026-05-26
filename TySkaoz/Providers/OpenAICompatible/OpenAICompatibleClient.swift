@@ -3,15 +3,22 @@ import Foundation
 enum OpenAICompatibleError: Error, LocalizedError, Equatable {
     case missingAPIKey
     case network(message: String)
-    case http(status: Int)
+    case http(status: Int, body: String? = nil)
     case decoding(message: String)
 
     var errorDescription: String? {
         switch self {
-        case .missingAPIKey:        return "Clé API manquante."
-        case .network(let msg):     return "Erreur réseau : \(msg)"
-        case .http(let status):     return "Réponse HTTP \(status)."
-        case .decoding(let msg):    return "Réponse inattendue : \(msg)"
+        case .missingAPIKey:
+            return "Clé API manquante."
+        case .network(let msg):
+            return "Erreur réseau : \(msg)"
+        case .http(let status, let body):
+            if let body, !body.isEmpty {
+                return "Réponse HTTP \(status) : \(body)"
+            }
+            return "Réponse HTTP \(status)."
+        case .decoding(let msg):
+            return "Réponse inattendue : \(msg)"
         }
     }
 }
@@ -94,7 +101,19 @@ struct OpenAICompatibleClient {
                         throw OpenAICompatibleError.network(message: "réponse non-HTTP")
                     }
                     guard (200..<300).contains(http.statusCode) else {
-                        throw OpenAICompatibleError.http(status: http.statusCode)
+                        // Read the body so the user sees what the provider
+                        // actually complained about (DeepSeek/OpenAI/Mistral
+                        // all return JSON error bodies with details).
+                        var body = ""
+                        for try await byte in bytes {
+                            body.append(Character(UnicodeScalar(byte)))
+                            if body.count > 1500 { break }
+                        }
+                        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                        throw OpenAICompatibleError.http(
+                            status: http.statusCode,
+                            body: trimmed.isEmpty ? nil : trimmed
+                        )
                     }
 
                     // Accumulators for tool-call deltas, keyed by the
@@ -117,6 +136,9 @@ struct OpenAICompatibleClient {
                     func absorb(_ info: LineInfo) {
                         if let delta = info.textDelta {
                             continuation.yield(.textDelta(delta))
+                        }
+                        if let reasoning = info.reasoningDelta {
+                            continuation.yield(.reasoningDelta(reasoning))
                         }
                         for tcDelta in info.toolCallDeltas {
                             let index = tcDelta.index ?? 0
@@ -172,6 +194,7 @@ struct OpenAICompatibleClient {
     struct LineInfo: Equatable {
         let textDelta: String?
         let toolCallDeltas: [ToolCallDeltaInfo]
+        let reasoningDelta: String?
         let done: Bool
 
         struct ToolCallDeltaInfo: Equatable {
@@ -187,27 +210,28 @@ struct OpenAICompatibleClient {
     /// payload throws.
     static func parseLine(_ raw: Data) throws -> LineInfo {
         guard let line = String(data: raw, encoding: .utf8) else {
-            return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+            return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false)
         }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return LineInfo(textDelta: nil, toolCallDeltas: [], done: false) }
-        guard trimmed.hasPrefix("data:") else { return LineInfo(textDelta: nil, toolCallDeltas: [], done: false) }
+        guard !trimmed.isEmpty else { return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false) }
+        guard trimmed.hasPrefix("data:") else { return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false) }
 
         let payload = trimmed.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
         if payload == "[DONE]" {
-            return LineInfo(textDelta: nil, toolCallDeltas: [], done: true)
+            return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: true)
         }
         guard let data = payload.data(using: .utf8) else {
-            return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+            return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false)
         }
 
         do {
             let chunk = try JSONDecoder().decode(OpenAICompatibleChunk.self, from: data)
             guard let choice = chunk.choices.first else {
-                return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+                return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false)
             }
 
             let textDelta = (choice.delta.content?.isEmpty ?? true) ? nil : choice.delta.content
+            let reasoningDelta = (choice.delta.reasoningContent?.isEmpty ?? true) ? nil : choice.delta.reasoningContent
 
             let tcDeltas = (choice.delta.toolCalls ?? []).map { tc in
                 LineInfo.ToolCallDeltaInfo(
@@ -221,6 +245,7 @@ struct OpenAICompatibleClient {
             return LineInfo(
                 textDelta: textDelta,
                 toolCallDeltas: tcDeltas,
+                reasoningDelta: reasoningDelta,
                 done: choice.finishReason != nil
             )
         } catch {
@@ -283,6 +308,9 @@ struct OpenAICompatibleClient {
                     "role": "assistant",
                     "content": msg.content
                 ]
+                if let reasoning = msg.reasoningContent, !reasoning.isEmpty {
+                    dict["reasoning_content"] = reasoning
+                }
                 var calls: [[String: Any]] = []
                 var j = i + 1
                 while j < messages.count, messages[j].role == .toolCall {

@@ -29,6 +29,10 @@ enum ProviderAvailability: Equatable {
 enum StreamEvent: Sendable, Hashable {
     case textDelta(String)
     case toolCall(id: String, name: String, argumentsJSON: String)
+    /// Chain-of-thought emitted by "thinking" models (DeepSeek v4, etc.).
+    /// Stored on the assistant message so the next round can round-trip it
+    /// to the provider that emitted it. ChatSession does not display it.
+    case reasoningDelta(String)
 }
 
 struct ChatMessage: Hashable, Sendable {
@@ -45,19 +49,22 @@ struct ChatMessage: Hashable, Sendable {
     let toolCallID: String?
     let toolName: String?
     let toolIsError: Bool?
+    let reasoningContent: String?
 
     init(
         role: Role,
         content: String,
         toolCallID: String? = nil,
         toolName: String? = nil,
-        toolIsError: Bool? = nil
+        toolIsError: Bool? = nil,
+        reasoningContent: String? = nil
     ) {
         self.role = role
         self.content = content
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.toolIsError = toolIsError
+        self.reasoningContent = reasoningContent
     }
 }
 
@@ -105,7 +112,8 @@ extension ChatMessage {
             content: message.content,
             toolCallID: message.toolCallID,
             toolName: message.toolName,
-            toolIsError: message.toolIsError
+            toolIsError: message.toolIsError,
+            reasoningContent: message.reasoningContent
         )
     }
 }

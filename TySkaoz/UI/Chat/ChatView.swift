@@ -7,6 +7,7 @@ struct ChatView: View {
     @Binding var conversation: Conversation?
     let provider: (any LLMProvider)?
     let providerID: String
+    let tools: ToolRegistry
 
     @State private var session = ChatSession()
     @State private var draft: String = ""
@@ -183,7 +184,8 @@ struct ChatView: View {
                 get: { conversation! },
                 set: { conversation = $0 }
             ),
-            using: provider
+            using: provider,
+            tools: tools
         )
     }
 }

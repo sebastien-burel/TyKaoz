@@ -89,15 +89,23 @@ final class ChatSession {
                     if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
                         conversation.wrappedValue.messages[idx].content += delta
                     }
+                case .reasoningDelta(let delta):
+                    if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
+                        let previous = conversation.wrappedValue.messages[idx].reasoningContent ?? ""
+                        conversation.wrappedValue.messages[idx].reasoningContent = previous + delta
+                    }
                 case .toolCall(let id, let name, let argumentsJSON):
                     pendingCalls.append((id, name, argumentsJSON))
                 }
             }
 
-            // If the assistant emitted no text this round, drop the empty
-            // placeholder — tool calls (if any) carry their own UI cards.
+            // If the assistant produced no text AND no reasoning this round,
+            // drop the empty placeholder — tool calls (if any) carry their
+            // own UI cards. Keep it if reasoning_content is present: the
+            // provider expects it back in the next round's history.
             if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }),
-               conversation.wrappedValue.messages[idx].content.isEmpty {
+               conversation.wrappedValue.messages[idx].content.isEmpty,
+               (conversation.wrappedValue.messages[idx].reasoningContent ?? "").isEmpty {
                 conversation.wrappedValue.messages.remove(at: idx)
             }
 

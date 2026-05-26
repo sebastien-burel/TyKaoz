@@ -9,10 +9,12 @@ struct OpenAICompatibleChunk: Decodable {
         struct Delta: Decodable {
             let content: String?
             let toolCalls: [ToolCallDelta]?
+            let reasoningContent: String?
 
             enum CodingKeys: String, CodingKey {
                 case content
                 case toolCalls = "tool_calls"
+                case reasoningContent = "reasoning_content"
             }
         }
 
