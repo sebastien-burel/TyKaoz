@@ -130,6 +130,15 @@ final class AppSettings {
         case .deepseek:  deepseekCatalog = ids
         case .apple:     break
         }
+        // Prune previously-enabled models that no longer exist in the
+        // catalog (the provider deprecated them, the user changed account,
+        // etc.). Keeps the picker honest. The active-model constraint runs
+        // implicitly via setEnabled.
+        let fresh = Set(ids)
+        let stale = enabledModels(for: provider).subtracting(fresh)
+        for modelID in stale {
+            setEnabled(false, modelID: modelID, for: provider)
+        }
     }
 
     // MARK: - Per-provider enabled models

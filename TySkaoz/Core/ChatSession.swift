@@ -80,7 +80,7 @@ final class ChatSession {
                 .dropLast()
                 .map { ChatMessage($0) }
 
-            var pendingCalls: [(id: String, name: String, args: String)] = []
+            var pendingCalls: [(id: String, name: String, args: String, signature: String?)] = []
 
             for try await event in provider.chat(messages: Array(history), tools: tools.specs) {
                 if Task.isCancelled { return }
@@ -94,8 +94,8 @@ final class ChatSession {
                         let previous = conversation.wrappedValue.messages[idx].reasoningContent ?? ""
                         conversation.wrappedValue.messages[idx].reasoningContent = previous + delta
                     }
-                case .toolCall(let id, let name, let argumentsJSON):
-                    pendingCalls.append((id, name, argumentsJSON))
+                case .toolCall(let id, let name, let argumentsJSON, let signature):
+                    pendingCalls.append((id, name, argumentsJSON, signature))
                 }
             }
 
@@ -118,7 +118,8 @@ final class ChatSession {
                         role: .toolCall,
                         content: call.args,
                         toolCallID: call.id,
-                        toolName: call.name
+                        toolName: call.name,
+                        thoughtSignature: call.signature
                     )
                 )
             }

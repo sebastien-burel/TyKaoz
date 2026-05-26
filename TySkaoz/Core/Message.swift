@@ -37,6 +37,12 @@ struct Message: Identifiable, Hashable, Codable {
     /// persist it so subsequent rounds round-trip correctly.
     var reasoningContent: String?
 
+    /// Gemini 2.5+ binds each emitted part to a cryptographic "thought
+    /// signature" (base64). The next request must echo it back next to the
+    /// matching part, or the API responds with HTTP 400. We carry it on
+    /// the message that owns the part — mostly `.toolCall` messages.
+    var thoughtSignature: String?
+
     init(
         id: UUID = UUID(),
         role: Role,
@@ -45,7 +51,8 @@ struct Message: Identifiable, Hashable, Codable {
         toolCallID: String? = nil,
         toolName: String? = nil,
         toolIsError: Bool? = nil,
-        reasoningContent: String? = nil
+        reasoningContent: String? = nil,
+        thoughtSignature: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -55,5 +62,6 @@ struct Message: Identifiable, Hashable, Codable {
         self.toolName = toolName
         self.toolIsError = toolIsError
         self.reasoningContent = reasoningContent
+        self.thoughtSignature = thoughtSignature
     }
 }

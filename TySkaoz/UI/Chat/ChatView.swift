@@ -3,6 +3,7 @@ import MarkdownUI
 
 struct ChatView: View {
     @Environment(ConversationStore.self) private var store
+    @Environment(AppSettings.self) private var settings
 
     @Binding var conversation: Conversation?
     let provider: (any LLMProvider)?
@@ -32,6 +33,39 @@ struct ChatView: View {
             if oldState == .streaming, newState == .idle {
                 autoRenameIfNeeded()
             }
+            if case .failed(let message) = newState {
+                pruneActiveModelIfDeprecated(reportedBy: message)
+            }
+        }
+    }
+
+    /// Some providers list deprecated models in their catalog but 404 on
+    /// use (Google is the worst offender — the API has no deprecation
+    /// flag). When that happens, we recognise the pattern and uncheck the
+    /// failing model so the picker stays honest. The user then picks a
+    /// fresh one.
+    private func pruneActiveModelIfDeprecated(reportedBy message: String) {
+        let lower = message.lowercased()
+        let deprecated = lower.contains("no longer available")
+            || lower.contains("not found")
+            || lower.contains("not_found")
+            || lower.contains("model not found")
+            || lower.contains("deprecated")
+        guard deprecated,
+              let provider = ProviderID(providerID),
+              let active = activeModelForCurrentProvider() else { return }
+        settings.setEnabled(false, modelID: active, for: provider)
+    }
+
+    private func activeModelForCurrentProvider() -> String? {
+        switch providerID {
+        case "ollama":    return settings.selectedModel
+        case "mistral":   return settings.mistralModel
+        case "openai":    return settings.openaiModel
+        case "anthropic": return settings.anthropicModel
+        case "google":    return settings.googleModel
+        case "deepseek":  return settings.deepseekModel
+        default:          return nil
         }
     }
 
@@ -130,11 +164,20 @@ struct ChatView: View {
             Text(message)
                 .font(Brand.Fonts.body(12))
                 .foregroundStyle(Brand.Colors.ink)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.red.opacity(0.08))
+        .contextMenu {
+            Button("Copier l'erreur") {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(message, forType: .string)
+            }
+        }
     }
 
     private var emptyState: some View {

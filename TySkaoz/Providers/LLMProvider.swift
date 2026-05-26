@@ -28,7 +28,9 @@ enum ProviderAvailability: Equatable {
 /// fully assembled, so callers don't have to parse partial JSON.
 enum StreamEvent: Sendable, Hashable {
     case textDelta(String)
-    case toolCall(id: String, name: String, argumentsJSON: String)
+    /// `thoughtSignature` is a Gemini-2.5+ opaque base64 blob that must be
+    /// echoed back alongside the matching part. Other providers leave it nil.
+    case toolCall(id: String, name: String, argumentsJSON: String, thoughtSignature: String? = nil)
     /// Chain-of-thought emitted by "thinking" models (DeepSeek v4, etc.).
     /// Stored on the assistant message so the next round can round-trip it
     /// to the provider that emitted it. ChatSession does not display it.
@@ -50,6 +52,7 @@ struct ChatMessage: Hashable, Sendable {
     let toolName: String?
     let toolIsError: Bool?
     let reasoningContent: String?
+    let thoughtSignature: String?
 
     init(
         role: Role,
@@ -57,7 +60,8 @@ struct ChatMessage: Hashable, Sendable {
         toolCallID: String? = nil,
         toolName: String? = nil,
         toolIsError: Bool? = nil,
-        reasoningContent: String? = nil
+        reasoningContent: String? = nil,
+        thoughtSignature: String? = nil
     ) {
         self.role = role
         self.content = content
@@ -65,6 +69,7 @@ struct ChatMessage: Hashable, Sendable {
         self.toolName = toolName
         self.toolIsError = toolIsError
         self.reasoningContent = reasoningContent
+        self.thoughtSignature = thoughtSignature
     }
 }
 
@@ -113,7 +118,8 @@ extension ChatMessage {
             toolCallID: message.toolCallID,
             toolName: message.toolName,
             toolIsError: message.toolIsError,
-            reasoningContent: message.reasoningContent
+            reasoningContent: message.reasoningContent,
+            thoughtSignature: message.thoughtSignature
         )
     }
 }
