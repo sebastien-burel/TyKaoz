@@ -36,7 +36,10 @@ struct OpenAICompatibleClient {
     func listModels() async throws -> [OpenAICompatibleModelsResponse.Model] {
         var request = URLRequest(url: baseURL.appending(path: "/models"))
         request.timeoutInterval = 10
-        request.setValue("Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
+        request.setValue(
+            "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+            forHTTPHeaderField: "Authorization"
+        )
 
         let data: Data
         let response: URLResponse
@@ -61,7 +64,11 @@ struct OpenAICompatibleClient {
 
     // MARK: - Chat (streaming)
 
-    func chat(model: String, messages: [OpenAICompatibleMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(
+        model: String,
+        messages: [ChatMessage],
+        tools: [ToolSpec]
+    ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -69,11 +76,12 @@ struct OpenAICompatibleClient {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                    request.setValue("Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))", forHTTPHeaderField: "Authorization")
-                    request.timeoutInterval = 60
-                    request.httpBody = try JSONEncoder().encode(
-                        OpenAICompatibleRequest(model: model, messages: messages, stream: true)
+                    request.setValue(
+                        "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+                        forHTTPHeaderField: "Authorization"
                     )
+                    request.timeoutInterval = 60
+                    request.httpBody = try Self.buildBody(model: model, messages: messages, tools: tools)
 
                     let (bytes, response): (URLSession.AsyncBytes, URLResponse)
                     do {
@@ -89,22 +97,65 @@ struct OpenAICompatibleClient {
                         throw OpenAICompatibleError.http(status: http.statusCode)
                     }
 
+                    // Accumulators for tool-call deltas, keyed by the
+                    // provider-assigned `index`. We only emit a complete
+                    // .toolCall event once the finish_reason arrives.
+                    var accumulators: [Int: (id: String, name: String, args: String)] = [:]
+
+                    func flushToolCalls() {
+                        for index in accumulators.keys.sorted() {
+                            let acc = accumulators[index]!
+                            continuation.yield(.toolCall(
+                                id: acc.id,
+                                name: acc.name,
+                                argumentsJSON: acc.args
+                            ))
+                        }
+                        accumulators.removeAll()
+                    }
+
+                    func absorb(_ info: LineInfo) {
+                        if let delta = info.textDelta {
+                            continuation.yield(.textDelta(delta))
+                        }
+                        for tcDelta in info.toolCallDeltas {
+                            let index = tcDelta.index ?? 0
+                            if var acc = accumulators[index] {
+                                if let id = tcDelta.id, acc.id.isEmpty { acc.id = id }
+                                if let name = tcDelta.name, acc.name.isEmpty { acc.name = name }
+                                if let argsDelta = tcDelta.argumentsDelta { acc.args += argsDelta }
+                                accumulators[index] = acc
+                            } else {
+                                accumulators[index] = (
+                                    id: tcDelta.id ?? "",
+                                    name: tcDelta.name ?? "",
+                                    args: tcDelta.argumentsDelta ?? ""
+                                )
+                            }
+                        }
+                    }
+
                     var buffer = Data()
                     for try await byte in bytes {
                         if Task.isCancelled { break }
                         if byte == 0x0A {
-                            let (delta, done) = try Self.parseLine(buffer)
+                            let info = try Self.parseLine(buffer)
                             buffer.removeAll(keepingCapacity: true)
-                            if let delta { continuation.yield(delta) }
-                            if done { continuation.finish(); return }
+                            absorb(info)
+                            if info.done {
+                                flushToolCalls()
+                                continuation.finish()
+                                return
+                            }
                         } else {
                             buffer.append(byte)
                         }
                     }
                     if !buffer.isEmpty {
-                        let (delta, _) = try Self.parseLine(buffer)
-                        if let delta { continuation.yield(delta) }
+                        let info = try Self.parseLine(buffer)
+                        absorb(info)
                     }
+                    flushToolCalls()
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -114,28 +165,177 @@ struct OpenAICompatibleClient {
         }
     }
 
-    /// Parses one SSE line. Returns the content delta (nil if not a payload
-    /// or empty content) and a `done` flag. Blank lines, `event:` and `id:`
-    /// preambles are no-ops. `data: [DONE]` flips done. Malformed JSON in a
-    /// `data:` payload throws.
-    static func parseLine(_ raw: Data) throws -> (delta: String?, done: Bool) {
-        guard let line = String(data: raw, encoding: .utf8) else { return (nil, false) }
+    // MARK: - Parsing one SSE line
+
+    /// What `parseLine` returns: text delta if any, tool-call deltas if any,
+    /// and the `done` flag (sentinel `[DONE]` or `finish_reason != nil`).
+    struct LineInfo: Equatable {
+        let textDelta: String?
+        let toolCallDeltas: [ToolCallDeltaInfo]
+        let done: Bool
+
+        struct ToolCallDeltaInfo: Equatable {
+            let index: Int?
+            let id: String?
+            let name: String?
+            let argumentsDelta: String?
+        }
+    }
+
+    /// Parses one SSE line. Blank lines, `event:` and `id:` preambles are
+    /// no-ops. `data: [DONE]` flips `done`. Malformed JSON in a `data:`
+    /// payload throws.
+    static func parseLine(_ raw: Data) throws -> LineInfo {
+        guard let line = String(data: raw, encoding: .utf8) else {
+            return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+        }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return (nil, false) }
-        guard trimmed.hasPrefix("data:") else { return (nil, false) }
+        guard !trimmed.isEmpty else { return LineInfo(textDelta: nil, toolCallDeltas: [], done: false) }
+        guard trimmed.hasPrefix("data:") else { return LineInfo(textDelta: nil, toolCallDeltas: [], done: false) }
 
         let payload = trimmed.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
-        if payload == "[DONE]" { return (nil, true) }
+        if payload == "[DONE]" {
+            return LineInfo(textDelta: nil, toolCallDeltas: [], done: true)
+        }
+        guard let data = payload.data(using: .utf8) else {
+            return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+        }
 
-        guard let data = payload.data(using: .utf8) else { return (nil, false) }
         do {
             let chunk = try JSONDecoder().decode(OpenAICompatibleChunk.self, from: data)
-            let content = chunk.choices.first?.delta.content
-            let finished = chunk.choices.first?.finishReason != nil
-            let delta = (content?.isEmpty ?? true) ? nil : content
-            return (delta, finished)
+            guard let choice = chunk.choices.first else {
+                return LineInfo(textDelta: nil, toolCallDeltas: [], done: false)
+            }
+
+            let textDelta = (choice.delta.content?.isEmpty ?? true) ? nil : choice.delta.content
+
+            let tcDeltas = (choice.delta.toolCalls ?? []).map { tc in
+                LineInfo.ToolCallDeltaInfo(
+                    index: tc.index,
+                    id: tc.id,
+                    name: tc.function?.name,
+                    argumentsDelta: tc.function?.arguments
+                )
+            }
+
+            return LineInfo(
+                textDelta: textDelta,
+                toolCallDeltas: tcDeltas,
+                done: choice.finishReason != nil
+            )
         } catch {
             throw OpenAICompatibleError.decoding(message: error.localizedDescription)
         }
+    }
+
+    // MARK: - Request body
+
+    /// Builds the request body as a dictionary so we can splice each tool's
+    /// raw JSON Schema in as a proper JSON object (Codable can't embed
+    /// arbitrary JSON without gymnastics).
+    static func buildBody(
+        model: String,
+        messages: [ChatMessage],
+        tools: [ToolSpec]
+    ) throws -> Data {
+        var dict: [String: Any] = [
+            "model": model,
+            "stream": true,
+            "messages": try messagesToDicts(messages)
+        ]
+        if !tools.isEmpty {
+            dict["tools"] = try tools.map { spec -> [String: Any] in
+                let parameters = try JSONSerialization.jsonObject(
+                    with: Data(spec.inputSchemaJSON.utf8)
+                )
+                return [
+                    "type": "function",
+                    "function": [
+                        "name": spec.name,
+                        "description": spec.description,
+                        "parameters": parameters
+                    ] as [String: Any]
+                ]
+            }
+        }
+        return try JSONSerialization.data(withJSONObject: dict, options: [])
+    }
+
+    /// Converts our internal chat history to the OpenAI-compatible wire
+    /// shape. Consecutive `.assistant` + `.toolCall` entries merge into a
+    /// single assistant message with a `tool_calls` array; `.toolResult`
+    /// entries become role="tool" messages with `tool_call_id`.
+    static func messagesToDicts(_ messages: [ChatMessage]) throws -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        var i = 0
+        while i < messages.count {
+            let msg = messages[i]
+            switch msg.role {
+            case .user, .system:
+                out.append([
+                    "role": msg.role.rawValue,
+                    "content": msg.content
+                ])
+                i += 1
+
+            case .assistant:
+                var dict: [String: Any] = [
+                    "role": "assistant",
+                    "content": msg.content
+                ]
+                var calls: [[String: Any]] = []
+                var j = i + 1
+                while j < messages.count, messages[j].role == .toolCall {
+                    if let id = messages[j].toolCallID, let name = messages[j].toolName {
+                        calls.append([
+                            "id": id,
+                            "type": "function",
+                            "function": [
+                                "name": name,
+                                "arguments": messages[j].content
+                            ] as [String: Any]
+                        ])
+                    }
+                    j += 1
+                }
+                if !calls.isEmpty { dict["tool_calls"] = calls }
+                out.append(dict)
+                i = j
+
+            case .toolCall:
+                // Orphan tool call (no preceding assistant). Synthesise an
+                // assistant message holding just the tool_calls array.
+                var calls: [[String: Any]] = []
+                var j = i
+                while j < messages.count, messages[j].role == .toolCall {
+                    if let id = messages[j].toolCallID, let name = messages[j].toolName {
+                        calls.append([
+                            "id": id,
+                            "type": "function",
+                            "function": [
+                                "name": name,
+                                "arguments": messages[j].content
+                            ] as [String: Any]
+                        ])
+                    }
+                    j += 1
+                }
+                out.append([
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": calls
+                ])
+                i = j
+
+            case .toolResult:
+                out.append([
+                    "role": "tool",
+                    "tool_call_id": msg.toolCallID ?? "",
+                    "content": msg.content
+                ])
+                i += 1
+            }
+        }
+        return out
     }
 }

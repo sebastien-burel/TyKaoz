@@ -1,27 +1,35 @@
 import Foundation
 
-/// Shared OpenAI-compatible chat completion schema. Reused by Mistral,
-/// OpenAI, DeepSeek (and any future provider that exposes the same wire
-/// format).
-
-struct OpenAICompatibleMessage: Codable, Hashable {
-    let role: String
-    let content: String
-}
-
-struct OpenAICompatibleRequest: Encodable {
-    let model: String
-    let messages: [OpenAICompatibleMessage]
-    let stream: Bool
-}
-
-/// One streamed chunk. `choices[0].delta.content` carries the delta;
-/// `finish_reason` is non-nil on the final chunk.
+/// Decoded shape of one streamed chunk from the OpenAI-compatible
+/// `/v1/chat/completions` API (used by OpenAI, Mistral, DeepSeek). Both
+/// content text and partial tool-call payloads can appear, sometimes
+/// together.
 struct OpenAICompatibleChunk: Decodable {
     struct Choice: Decodable {
         struct Delta: Decodable {
             let content: String?
+            let toolCalls: [ToolCallDelta]?
+
+            enum CodingKeys: String, CodingKey {
+                case content
+                case toolCalls = "tool_calls"
+            }
         }
+
+        struct ToolCallDelta: Decodable {
+            let index: Int?
+            let id: String?
+            /// "function" in the current API; carried as-is for forwards
+            /// compatibility but we don't switch on it.
+            let type: String?
+            let function: FunctionDelta?
+        }
+
+        struct FunctionDelta: Decodable {
+            let name: String?
+            let arguments: String?
+        }
+
         let delta: Delta
         let finishReason: String?
 
