@@ -1,24 +1,34 @@
 import Foundation
 
+/// URLProtocol stub used in tests. Each `session(...)` call mints a unique
+/// token, registered in a thread-safe table; the matching session attaches
+/// the token to every request via `httpAdditionalHeaders`. At load time the
+/// protocol resolves its stub by token, so concurrent test suites can't
+/// clobber each other's mock state.
 final class MockURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var stub: (data: Data, status: Int)?
-    nonisolated(unsafe) static var stubError: URLError?
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var dataStubs: [String: (data: Data, status: Int)] = [:]
+    nonisolated(unsafe) private static var errorStubs: [String: URLError] = [:]
+
+    private static let tokenHeader = "X-MockURLProtocol-Token"
 
     static func session(data: Data, status: Int) -> URLSession {
-        stub = (data, status)
-        stubError = nil
-        return makeSession()
+        let token = UUID().uuidString
+        lock.withLock { dataStubs[token] = (data, status) }
+        return makeSession(token: token)
     }
 
     static func session(error: URLError) -> URLSession {
-        stub = nil
-        stubError = error
-        return makeSession()
+        let token = UUID().uuidString
+        lock.withLock { errorStubs[token] = error }
+        return makeSession(token: token)
     }
 
-    private static func makeSession() -> URLSession {
+    private static func makeSession(token: String) -> URLSession {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
+        config.httpAdditionalHeaders = [tokenHeader: token]
         return URLSession(configuration: config)
     }
 
@@ -28,16 +38,15 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     private let queue = DispatchQueue(label: "MockURLProtocol.delivery")
 
     override func startLoading() {
-        // Capture stub state at startLoading time so a concurrent test cannot
-        // race the delivery dispatched below.
-        let stub = MockURLProtocol.stub
-        let stubError = MockURLProtocol.stubError
-        // Deliver asynchronously so URLSession.bytes(for:) properly initializes
-        // its AsyncBytes pipeline before bytes arrive.
+        let token = request.value(forHTTPHeaderField: Self.tokenHeader) ?? ""
+        let (stub, errorStub): ((data: Data, status: Int)?, URLError?) = Self.lock.withLock {
+            (Self.dataStubs[token], Self.errorStubs[token])
+        }
+
         queue.async { [weak self] in
             guard let self else { return }
-            if let stubError {
-                self.client?.urlProtocol(self, didFailWithError: stubError)
+            if let errorStub {
+                self.client?.urlProtocol(self, didFailWithError: errorStub)
                 return
             }
             guard let stub,
@@ -52,8 +61,8 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
                 return
             }
             self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            // Push the body in small chunks so the AsyncBytes line splitter has the
-            // opportunity to emit lines progressively (mirrors real streaming).
+            // Push in small chunks so URLSession.bytes(for:) processes them
+            // progressively, mirroring real streaming.
             let chunkSize = 32
             var offset = 0
             while offset < stub.data.count {
@@ -66,4 +75,12 @@ final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
+    }
 }
