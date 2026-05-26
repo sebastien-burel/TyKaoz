@@ -1,32 +1,36 @@
 import Foundation
 
-struct AnthropicMessage: Codable, Hashable {
-    let role: String      // "user" or "assistant"
-    let content: String
-}
-
-struct AnthropicChatRequest: Encodable {
-    let model: String
-    let messages: [AnthropicMessage]
-    let system: String?
-    let stream: Bool
-    let maxTokens: Int
-
-    enum CodingKeys: String, CodingKey {
-        case model, messages, system, stream
-        case maxTokens = "max_tokens"
-    }
-}
-
-/// One `data:` payload from the streamed events. We use a discriminator on
-/// `type` to know which kind of event we're looking at.
+/// One streaming event from Anthropic's `/v1/messages` SSE response.
+/// Anthropic emits a structured sequence: message_start → one or more
+/// content_block_start/delta/stop pairs → message_delta → message_stop.
+/// The same event shape is shared across types; the `type` discriminator
+/// tells us which fields are populated.
 struct AnthropicStreamEvent: Decodable {
     let type: String
+    let index: Int?
+    let contentBlock: ContentBlock?
     let delta: Delta?
 
+    struct ContentBlock: Decodable {
+        let type: String          // "text" or "tool_use"
+        let id: String?           // populated for tool_use
+        let name: String?         // populated for tool_use
+    }
+
     struct Delta: Decodable {
-        let type: String?
-        let text: String?
+        let type: String?         // "text_delta", "input_json_delta", "stop_reason", ...
+        let text: String?         // for text_delta
+        let partialJSON: String?  // for input_json_delta
+
+        enum CodingKeys: String, CodingKey {
+            case type, text
+            case partialJSON = "partial_json"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, index, delta
+        case contentBlock = "content_block"
     }
 }
 
