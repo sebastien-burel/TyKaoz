@@ -35,10 +35,13 @@ enum ConversationTitler {
 
         var collected = ""
         do {
-            for try await delta in provider.chat(messages: [
-                ChatMessage(role: .user, content: prompt)
-            ]) {
-                collected += delta
+            for try await event in provider.chat(
+                messages: [ChatMessage(role: .user, content: prompt)],
+                tools: []
+            ) {
+                if case .textDelta(let delta) = event {
+                    collected += delta
+                }
             }
         } catch {
             return nil

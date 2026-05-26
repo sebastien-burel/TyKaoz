@@ -32,7 +32,7 @@ struct AnthropicProvider: LLMProvider {
         }
     }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         // Extract system messages into a single concatenated system prompt;
         // Anthropic wants them as a top-level parameter, not in the array.
         let systemBits = messages.filter { $0.role == .system }.map(\.content)
@@ -42,6 +42,6 @@ struct AnthropicProvider: LLMProvider {
             .filter { $0.role == .user || $0.role == .assistant }
             .map { AnthropicMessage(role: $0.role.rawValue, content: $0.content) }
 
-        return client.chat(model: model, system: system, messages: anthropicMessages)
+        return wrapAsTextStream(client.chat(model: model, system: system, messages: anthropicMessages))
     }
 }

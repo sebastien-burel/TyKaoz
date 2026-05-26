@@ -9,29 +9,29 @@ struct LLMProviderTests {
 
     @Test
     func mockProviderImplementsProtocolAndStreams() async throws {
-        let mock = MockProvider(deltas: ["Bon", "jour"])
+        let mock = MockProvider(events: [.textDelta("Bon"), .textDelta("jour")])
 
         var collected: [String] = []
-        for try await delta in mock.chat(messages: [
-            ChatMessage(role: .user, content: "Salut")
-        ]) {
-            collected.append(delta)
+        for try await event in mock.chat(messages: [ChatMessage(role: .user, content: "Salut")], tools: []) {
+            if case .textDelta(let text) = event {
+                collected.append(text)
+            }
         }
         #expect(collected == ["Bon", "jour"])
     }
 
     @Test
     func mockProviderReportsAvailability() async {
-        let mock = MockProvider(deltas: [])
+        let mock = MockProvider(events: [])
         #expect(await mock.availability() == .ready)
 
-        let downed = MockProvider(deltas: [], availability: .unavailable(reason: "down"))
+        let downed = MockProvider(events: [], availability: .unavailable(reason: "down"))
         #expect(await downed.availability() == .unavailable(reason: "down"))
     }
 
     @Test
     func chatSessionWorksWithAnyLLMProvider() async throws {
-        let mock = MockProvider(deltas: ["Sa", "lut"])
+        let mock = MockProvider(events: [.textDelta("Sa"), .textDelta("lut")])
         let chatSession = ChatSession()
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
@@ -57,24 +57,26 @@ struct LLMProviderTests {
     }
 }
 
-/// Minimal LLMProvider implementation used to confirm the protocol shape.
+/// Minimal LLMProvider implementation that emits a pre-baked list of events
+/// in order. Used to exercise the protocol surface and the ChatSession loop
+/// without going through any HTTP code.
 struct MockProvider: LLMProvider {
     let id = "mock"
     let displayName = "Mock"
-    let deltas: [String]
+    let events: [StreamEvent]
     let availabilityValue: ProviderAvailability
 
-    init(deltas: [String], availability: ProviderAvailability = .ready) {
-        self.deltas = deltas
+    init(events: [StreamEvent], availability: ProviderAvailability = .ready) {
+        self.events = events
         self.availabilityValue = availability
     }
 
     func availability() async -> ProviderAvailability { availabilityValue }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            for delta in deltas {
-                continuation.yield(delta)
+            for event in events {
+                continuation.yield(event)
             }
             continuation.finish()
         }

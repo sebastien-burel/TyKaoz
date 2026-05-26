@@ -32,7 +32,7 @@ struct GoogleProvider: LLMProvider {
         }
     }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         // System messages are concatenated into systemInstruction; the rest
         // becomes contents[] with role "user" or "model" (Google uses "model"
         // for assistant turns).
@@ -46,6 +46,6 @@ struct GoogleProvider: LLMProvider {
                 return GoogleContent(role: role, parts: [GooglePart(text: message.content)])
             }
 
-        return client.chat(model: model, system: system, contents: contents)
+        return wrapAsTextStream(client.chat(model: model, system: system, contents: contents))
     }
 }

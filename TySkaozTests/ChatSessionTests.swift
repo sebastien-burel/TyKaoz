@@ -10,7 +10,7 @@ struct ChatSessionTests {
     @Test
     func appendsUserAndStreamsAssistantContent() async throws {
         let session = ChatSession()
-        let provider = MockProvider(deltas: ["Sa", "lut"])
+        let provider = MockProvider(events: [.textDelta("Sa"), .textDelta("lut")])
 
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
@@ -28,7 +28,7 @@ struct ChatSessionTests {
     @Test
     func ignoresEmptyDraft() {
         let session = ChatSession()
-        let provider = MockProvider(deltas: [])
+        let provider = MockProvider(events: [])
 
         var conversation = Conversation(title: "test")
         let binding = Binding(get: { conversation }, set: { conversation = $0 })
@@ -78,6 +78,58 @@ struct ChatSessionTests {
         #expect(conversation.messages.last?.content == "partial")
     }
 
+    // MARK: - Tool calling loop
+
+    @Test
+    func executesToolCallAndContinuesWithResult() async throws {
+        // Round 1: provider asks for current_datetime, no text.
+        // Round 2: provider replies with text using the result.
+        let provider = ScriptedProvider(rounds: [
+            [.toolCall(id: "call-1", name: "current_datetime", argumentsJSON: "{}")],
+            [.textDelta("Il est ".self), .textDelta("midi.")]
+        ])
+        let session = ChatSession()
+        let tools = ToolRegistry(tools: [CurrentDateTimeTool()])
+
+        var conversation = Conversation(title: "test")
+        let binding = Binding(get: { conversation }, set: { conversation = $0 })
+
+        session.send(text: "Heure ?", in: binding, using: provider, tools: tools)
+        try await waitUntil { session.state == .idle }
+
+        // Expected sequence: user, toolCall, toolResult, assistant
+        #expect(conversation.messages.count == 4)
+        #expect(conversation.messages[0].role == .user)
+        #expect(conversation.messages[1].role == .toolCall)
+        #expect(conversation.messages[1].toolName == "current_datetime")
+        #expect(conversation.messages[1].toolCallID == "call-1")
+        #expect(conversation.messages[2].role == .toolResult)
+        #expect(conversation.messages[2].toolCallID == "call-1")
+        #expect(conversation.messages[2].toolIsError == false)
+        #expect(conversation.messages[3].role == .assistant)
+        #expect(conversation.messages[3].content == "Il est midi.")
+    }
+
+    @Test
+    func errorFromToolSurfacedAsToolResultWithIsError() async throws {
+        let provider = ScriptedProvider(rounds: [
+            [.toolCall(id: "x", name: "unknown_tool", argumentsJSON: "{}")],
+            [.textDelta("Oups.")]
+        ])
+        let session = ChatSession()
+        let tools = ToolRegistry(tools: [CurrentDateTimeTool()])
+
+        var conversation = Conversation(title: "test")
+        let binding = Binding(get: { conversation }, set: { conversation = $0 })
+
+        session.send(text: "Test", in: binding, using: provider, tools: tools)
+        try await waitUntil { session.state == .idle }
+
+        let resultMsg = conversation.messages.first { $0.role == .toolResult }
+        #expect(resultMsg?.toolIsError == true)
+        #expect(resultMsg?.content.contains("Unknown tool") == true)
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(2),
         _ condition: @MainActor () -> Bool
@@ -98,7 +150,7 @@ private struct ThrowingProvider: LLMProvider {
 
     func availability() async -> ProviderAvailability { .ready }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             continuation.finish(throwing: error)
         }
@@ -112,10 +164,50 @@ private struct HangingProvider: LLMProvider {
 
     func availability() async -> ProviderAvailability { .ready }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
-            continuation.yield(initialDelta)
+            continuation.yield(.textDelta(initialDelta))
             // Never finishes; the test stops the session instead.
         }
+    }
+}
+
+/// Emits a pre-baked sequence of events per chat() invocation. Used to drive
+/// the multi-round tool calling loop in tests.
+private final class ScriptedProvider: LLMProvider, @unchecked Sendable {
+    let id = "scripted"
+    let displayName = "Scripted"
+
+    private let rounds: [[StreamEvent]]
+    private var nextRound = 0
+    private let lock = NSLock()
+
+    init(rounds: [[StreamEvent]]) {
+        self.rounds = rounds
+    }
+
+    func availability() async -> ProviderAvailability { .ready }
+
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
+        let events = lock.withLock { () -> [StreamEvent] in
+            guard nextRound < rounds.count else { return [] }
+            let evts = rounds[nextRound]
+            nextRound += 1
+            return evts
+        }
+        return AsyncThrowingStream { continuation in
+            for event in events {
+                continuation.yield(event)
+            }
+            continuation.finish()
+        }
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
     }
 }

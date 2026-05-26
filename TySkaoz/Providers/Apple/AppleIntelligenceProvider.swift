@@ -27,7 +27,7 @@ struct AppleIntelligenceProvider: LLMProvider {
         }
     }
 
-    func chat(messages: [ChatMessage]) -> AsyncThrowingStream<String, Error> {
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -52,7 +52,7 @@ struct AppleIntelligenceProvider: LLMProvider {
                             let startIndex = text.index(text.startIndex, offsetBy: emitted)
                             let delta = String(text[startIndex...])
                             emitted = text.count
-                            continuation.yield(delta)
+                            continuation.yield(.textDelta(delta))
                         }
                     }
                     continuation.finish()
@@ -111,6 +111,11 @@ struct AppleIntelligenceProvider: LLMProvider {
                         toolDefinitions: []
                     )
                 ))
+            case .toolCall, .toolResult:
+                // Foundation Models has its own Tool protocol — Bloc 4c will
+                // bridge our ToolCall/ToolResult into Transcript.toolCalls /
+                // .toolOutput entries. For now we drop them.
+                continue
             }
         }
 

@@ -11,6 +11,11 @@ final class ChatSession {
         case failed(message: String)
     }
 
+    /// Defensive cap: a tool-using model occasionally goes in circles. After
+    /// this many provider → tool → provider iterations we bail and let the
+    /// user inspect what happened.
+    static let maxToolRounds = 10
+
     private(set) var state: State = .idle
 
     @ObservationIgnored private var task: Task<Void, Never>?
@@ -18,30 +23,18 @@ final class ChatSession {
     func send(
         text: String,
         in conversation: Binding<Conversation>,
-        using provider: any LLMProvider
+        using provider: any LLMProvider,
+        tools: ToolRegistry = ToolRegistry(tools: [])
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, state != .streaming else { return }
 
         conversation.wrappedValue.messages.append(Message(role: .user, content: trimmed))
-
-        let assistant = Message(role: .assistant, content: "")
-        let assistantID = assistant.id
-        conversation.wrappedValue.messages.append(assistant)
-
-        let history = conversation.wrappedValue.messages
-            .dropLast()
-            .compactMap { ChatMessage($0) }
-
         state = .streaming
 
         task = Task { [weak self] in
             do {
-                for try await delta in provider.chat(messages: history) {
-                    if Task.isCancelled { break }
-                    guard let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) else { break }
-                    conversation.wrappedValue.messages[idx].content += delta
-                }
+                try await self?.runConversationLoop(in: conversation, provider: provider, tools: tools)
                 self?.state = .idle
             } catch is CancellationError {
                 self?.state = .idle
@@ -62,5 +55,96 @@ final class ChatSession {
     func stop() {
         task?.cancel()
         task = nil
+    }
+
+    // MARK: - Internals
+
+    /// Multi-round loop: ask the provider for a turn, append text deltas to
+    /// the current assistant message and collect any tool calls. If tool
+    /// calls came back, execute them, append the toolCall + toolResult
+    /// messages to the conversation, and loop. Otherwise we're done.
+    private func runConversationLoop(
+        in conversation: Binding<Conversation>,
+        provider: any LLMProvider,
+        tools: ToolRegistry
+    ) async throws {
+        for round in 0..<Self.maxToolRounds {
+            if Task.isCancelled { return }
+
+            // Fresh empty assistant message for this round's text output.
+            let assistant = Message(role: .assistant, content: "")
+            let assistantID = assistant.id
+            conversation.wrappedValue.messages.append(assistant)
+
+            let history = conversation.wrappedValue.messages
+                .dropLast()
+                .map { ChatMessage($0) }
+
+            var pendingCalls: [(id: String, name: String, args: String)] = []
+
+            for try await event in provider.chat(messages: Array(history), tools: tools.specs) {
+                if Task.isCancelled { return }
+                switch event {
+                case .textDelta(let delta):
+                    if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
+                        conversation.wrappedValue.messages[idx].content += delta
+                    }
+                case .toolCall(let id, let name, let argumentsJSON):
+                    pendingCalls.append((id, name, argumentsJSON))
+                }
+            }
+
+            // If the assistant emitted no text this round, drop the empty
+            // placeholder — tool calls (if any) carry their own UI cards.
+            if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }),
+               conversation.wrappedValue.messages[idx].content.isEmpty {
+                conversation.wrappedValue.messages.remove(at: idx)
+            }
+
+            if pendingCalls.isEmpty { return }
+
+            // Append the tool_call entries first so the UI can show them.
+            for call in pendingCalls {
+                conversation.wrappedValue.messages.append(
+                    Message(
+                        role: .toolCall,
+                        content: call.args,
+                        toolCallID: call.id,
+                        toolName: call.name
+                    )
+                )
+            }
+
+            // Execute the calls (one by one for determinism; could be a
+            // task group if any tool becomes slow).
+            for call in pendingCalls {
+                if Task.isCancelled { return }
+                let result = await tools.execute(
+                    ToolCall(
+                        id: call.id,
+                        toolName: call.name,
+                        arguments: Data(call.args.utf8)
+                    )
+                )
+                conversation.wrappedValue.messages.append(
+                    Message(
+                        role: .toolResult,
+                        content: result.content,
+                        toolCallID: result.callID,
+                        toolIsError: result.isError
+                    )
+                )
+            }
+
+            // Tail-safety: prevent infinite loops on degenerate models.
+            if round == Self.maxToolRounds - 1 {
+                conversation.wrappedValue.messages.append(
+                    Message(
+                        role: .assistant,
+                        content: "[Limite de \(Self.maxToolRounds) tours d'outils atteinte — interrompu.]"
+                    )
+                )
+            }
+        }
     }
 }
