@@ -1,10 +1,13 @@
 import Foundation
 
 enum ProviderFactory {
-    static func make(from settings: AppSettings) -> (any LLMProvider)? {
+    static func make(
+        from settings: AppSettings,
+        tools: ToolRegistry = ToolRegistry(tools: [])
+    ) -> (any LLMProvider)? {
         switch settings.selectedProviderID {
         case "apple":
-            return AppleIntelligenceProvider()
+            return AppleIntelligenceProvider(toolRegistry: tools)
 
         case "ollama":
             guard let url = settings.serverURL,

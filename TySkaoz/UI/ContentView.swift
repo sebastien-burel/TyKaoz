@@ -21,7 +21,7 @@ struct ContentView: View {
         } detail: {
             ChatView(
                 conversation: selectedBinding,
-                provider: ProviderFactory.make(from: settings),
+                provider: ProviderFactory.make(from: settings, tools: toolRegistry),
                 providerID: settings.selectedProviderID,
                 tools: toolRegistry
             )

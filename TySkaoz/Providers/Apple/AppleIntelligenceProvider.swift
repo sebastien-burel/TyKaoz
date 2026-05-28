@@ -5,6 +5,16 @@ struct AppleIntelligenceProvider: LLMProvider {
     let id: String = "apple"
     let displayName: String = "Apple Intelligence"
 
+    /// Foundation Models invokes tools *inside* `streamResponse` (the session
+    /// runs each `call` and keeps generating), unlike our other providers
+    /// where ChatSession drives the loop. We therefore need the executable
+    /// tools here, not just their specs.
+    let toolRegistry: ToolRegistry
+
+    init(toolRegistry: ToolRegistry = ToolRegistry(tools: [])) {
+        self.toolRegistry = toolRegistry
+    }
+
     /// Synchronous convenience for UI hints (e.g. sidebar indicator).
     /// The full `availability()` returns the precise reason of unavailability.
     static var isReady: Bool {
@@ -41,7 +51,11 @@ struct AppleIntelligenceProvider: LLMProvider {
                         systemPrompt: Self.defaultInstructions,
                         history: priorHistory
                     )
-                    let session = LanguageModelSession(transcript: transcript)
+                    let bridged = Self.bridgeTools(tools, registry: toolRegistry)
+                    let session = LanguageModelSession(
+                        tools: bridged,
+                        transcript: transcript
+                    )
 
                     var emitted = 0
                     let stream = session.streamResponse(to: lastUser.content)
@@ -56,6 +70,10 @@ struct AppleIntelligenceProvider: LLMProvider {
                         }
                     }
                     continuation.finish()
+                } catch let generation as LanguageModelSession.GenerationError {
+                    continuation.finish(
+                        throwing: AppleIntelligenceError.generation(Self.describe(generation))
+                    )
                 } catch {
                     continuation.finish(throwing: error)
                 }
@@ -125,15 +143,110 @@ struct AppleIntelligenceProvider: LLMProvider {
     private static func textSegment(_ content: String) -> Transcript.TextSegment {
         Transcript.TextSegment(id: UUID().uuidString, content: content)
     }
+
+    /// Foundation Models surfaces opaque `error -1` descriptions; pull the
+    /// human-readable parts so the failure banner says something actionable.
+    private static func describe(_ error: LanguageModelSession.GenerationError) -> String {
+        let parts = [error.errorDescription, error.failureReason, error.recoverySuggestion]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? String(describing: error) : parts.joined(separator: " ")
+    }
+
+    // MARK: - Tool bridging
+
+    /// Wraps the requested specs (whose implementations live in `registry`)
+    /// as Foundation Models tools. Specs missing from the registry or whose
+    /// schema can't be translated are skipped.
+    private static func bridgeTools(
+        _ specs: [ToolSpec],
+        registry: ToolRegistry
+    ) -> [any FoundationModels.Tool] {
+        specs.compactMap { spec in
+            guard registry.tool(named: spec.name) != nil,
+                  let schema = try? generationSchema(for: spec) else { return nil }
+            return BridgedTool(
+                name: spec.name,
+                description: spec.description,
+                parameters: schema
+            ) { data in
+                let result = await registry.execute(
+                    ToolCall(id: UUID().uuidString, toolName: spec.name, arguments: data)
+                )
+                return result.content
+            }
+        }
+    }
+
+    /// Translates the subset of JSON Schema our tools use (object of scalar
+    /// properties, optional enums, `required`) into a Foundation Models
+    /// `GenerationSchema` via `DynamicGenerationSchema`.
+    static func generationSchema(for spec: ToolSpec) throws -> GenerationSchema {
+        let object = (try? JSONSerialization.jsonObject(with: Data(spec.inputSchemaJSON.utf8)))
+            as? [String: Any] ?? [:]
+        let properties = object["properties"] as? [String: Any] ?? [:]
+        let required = Set(object["required"] as? [String] ?? [])
+
+        let props: [DynamicGenerationSchema.Property] = properties.compactMap { name, raw in
+            guard let prop = raw as? [String: Any] else { return nil }
+            return DynamicGenerationSchema.Property(
+                name: name,
+                description: prop["description"] as? String,
+                schema: leafSchema(for: prop, name: name),
+                isOptional: !required.contains(name)
+            )
+        }
+
+        let root = DynamicGenerationSchema(
+            name: spec.name,
+            description: spec.description,
+            properties: props
+        )
+        return try GenerationSchema(root: root, dependencies: [])
+    }
+
+    private static func leafSchema(
+        for prop: [String: Any],
+        name: String
+    ) -> DynamicGenerationSchema {
+        if let values = prop["enum"] as? [String] {
+            return DynamicGenerationSchema(name: name, anyOf: values)
+        }
+        switch prop["type"] as? String {
+        case "integer": return DynamicGenerationSchema(type: Int.self)
+        case "number":  return DynamicGenerationSchema(type: Double.self)
+        case "boolean": return DynamicGenerationSchema(type: Bool.self)
+        default:        return DynamicGenerationSchema(type: String.self)
+        }
+    }
+}
+
+/// Adapts one of our registry tools to the Foundation Models `Tool` protocol.
+/// Arguments arrive as dynamic `GeneratedContent`; we hand their JSON straight
+/// to the underlying tool. Execution goes through `ToolRegistry.execute`, so
+/// errors come back as result text the model can reason about rather than
+/// throwing.
+private struct BridgedTool: FoundationModels.Tool {
+    let name: String
+    let description: String
+    let parameters: GenerationSchema
+    let executor: @Sendable (Data) async -> String
+
+    func call(arguments: GeneratedContent) async -> String {
+        await executor(Data(arguments.jsonString.utf8))
+    }
 }
 
 enum AppleIntelligenceError: Error, LocalizedError {
     case noUserMessage
+    case generation(String)
 
     var errorDescription: String? {
         switch self {
         case .noUserMessage:
             return "Aucun message utilisateur à envoyer."
+        case .generation(let message):
+            return message
         }
     }
 }
