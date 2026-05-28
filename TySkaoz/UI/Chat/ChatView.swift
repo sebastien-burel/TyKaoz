@@ -95,7 +95,7 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(conversation.messages) { message in
-                            MessageBubble(message: message)
+                            row(for: message, in: conversation)
                                 .id(message.id)
                         }
                     }
@@ -109,6 +109,28 @@ struct ChatView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Tool calls render as collapsible cards (paired with their result);
+    /// tool results are folded into those cards, so they don't get their own
+    /// row. Everything else is a normal bubble.
+    @ViewBuilder
+    private func row(for message: Message, in conversation: Conversation) -> some View {
+        switch message.role {
+        case .toolCall:
+            ToolCallCard(call: message, result: toolResult(for: message, in: conversation))
+        case .toolResult:
+            EmptyView()
+        default:
+            MessageBubble(message: message)
+        }
+    }
+
+    private func toolResult(for call: Message, in conversation: Conversation) -> Message? {
+        guard let id = call.toolCallID else { return nil }
+        return conversation.messages.first {
+            $0.role == .toolResult && $0.toolCallID == id
         }
     }
 

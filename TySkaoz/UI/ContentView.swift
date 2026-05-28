@@ -7,17 +7,13 @@ struct ContentView: View {
 
     @State private var selection: Conversation.ID?
 
-    /// Built fresh each render so newly-authorised folders flow into the file
-    /// tools without restarting. Bloc 6 will make individual tools toggleable.
+    /// Built fresh each render so newly-authorised folders and tool toggles
+    /// flow into the live registry without restarting.
     private var toolRegistry: ToolRegistry {
-        let roots = fileSpaces.authorizedRoots
-        return ToolRegistry(tools: [
-            CurrentDateTimeTool(),
-            FetchURLTool(),
-            ListDirectoryTool(roots: roots),
-            ReadFileTool(roots: roots),
-            GrepFilesTool(roots: roots)
-        ])
+        ToolRegistry(tools: ToolCatalog.enabledTools(
+            roots: fileSpaces.authorizedRoots,
+            settings: settings
+        ))
     }
 
     var body: some View {

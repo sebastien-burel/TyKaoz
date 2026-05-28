@@ -36,20 +36,23 @@ struct SettingsPanelView: View {
         case .provider(.google):    GoogleSettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
         case .provider(.apple):     AppleSettingsView()
+        case .tools:                ToolsSettingsView()
         case .fileSpaces:           FileSpacesSettingsView()
         }
     }
 }
 
 /// A selectable settings section: one per provider, plus the shared tools
-/// (file spaces) pane.
+/// panes (tool toggles and file spaces).
 enum SettingsSection: Hashable {
     case provider(ProviderID)
+    case tools
     case fileSpaces
 
     var title: String {
         switch self {
         case .provider(let id): return id.displayName
+        case .tools:            return "Outils"
         case .fileSpaces:       return "Dossiers autorisés"
         }
     }
@@ -71,7 +74,8 @@ private struct ProvidersSidebar: View {
                 }
 
                 sectionLabel("Outils")
-                fileSpacesRow
+                toolRow(title: "Outils", systemImage: "wrench.and.screwdriver", section: .tools)
+                toolRow(title: "Dossiers", systemImage: "folder", section: .fileSpaces)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -114,14 +118,14 @@ private struct ProvidersSidebar: View {
         .onTapGesture { selection = .provider(id) }
     }
 
-    private var fileSpacesRow: some View {
-        let isSelected = selection == .fileSpaces
+    private func toolRow(title: String, systemImage: String, section: SettingsSection) -> some View {
+        let isSelected = selection == section
         return HStack(spacing: 8) {
-            Image(systemName: "folder")
+            Image(systemName: systemImage)
                 .font(.system(size: 11))
                 .foregroundStyle(Brand.Colors.tide)
                 .frame(width: 8)
-            Text("Dossiers")
+            Text(title)
                 .font(Brand.Fonts.body(13))
                 .foregroundStyle(Brand.Colors.ink)
             Spacer()
@@ -134,7 +138,7 @@ private struct ProvidersSidebar: View {
         )
         .contentShape(Rectangle())
         .padding(.horizontal, 6)
-        .onTapGesture { selection = .fileSpaces }
+        .onTapGesture { selection = section }
     }
 
     /// Quick heuristic: green if a working configuration is on file, gray if

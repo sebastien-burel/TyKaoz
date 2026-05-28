@@ -210,6 +210,22 @@ final class AppSettings {
         }
     }
 
+    // MARK: - Tools
+
+    /// Tools the user has switched off. Stored as the disabled set so any new
+    /// built-in tool is enabled by default.
+    var disabledTools: Set<String> = [] {
+        didSet { defaults.set(Array(disabledTools), forKey: Keys.disabledTools) }
+    }
+
+    func isToolEnabled(_ name: String) -> Bool {
+        !disabledTools.contains(name)
+    }
+
+    func setToolEnabled(_ enabled: Bool, name: String) {
+        if enabled { disabledTools.remove(name) } else { disabledTools.insert(name) }
+    }
+
     // MARK: - Init
 
     init(defaults: UserDefaults = .standard) {
@@ -239,6 +255,7 @@ final class AppSettings {
         self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
         self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
+        self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
     }
 
     private enum Keys {
@@ -250,6 +267,7 @@ final class AppSettings {
         static let anthropicModel = "anthropic.selectedModel"
         static let googleModel = "google.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
+        static let disabledTools = "tools.disabled"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"
