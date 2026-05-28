@@ -3,7 +3,7 @@ import Foundation
 enum OllamaClientError: Error, LocalizedError, Equatable {
     case invalidURL
     case network(message: String)
-    case http(status: Int)
+    case http(status: Int, body: String? = nil)
     case decoding(message: String)
 
     var errorDescription: String? {
@@ -12,7 +12,10 @@ enum OllamaClientError: Error, LocalizedError, Equatable {
             return "URL invalide."
         case .network(let message):
             return "Erreur réseau : \(message)"
-        case .http(let status):
+        case .http(let status, let body):
+            if let body, !body.isEmpty {
+                return "Réponse HTTP \(status) : \(body)"
+            }
             return "Réponse HTTP \(status)."
         case .decoding(let message):
             return "Réponse inattendue : \(message)"
@@ -56,7 +59,13 @@ struct OllamaClient {
         }
     }
 
-    func chat(model: String, messages: [OllamaChatMessage]) -> AsyncThrowingStream<String, Error> {
+    // MARK: - Chat (streaming)
+
+    func chat(
+        model: String,
+        messages: [ChatMessage],
+        tools: [ToolSpec]
+    ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -65,9 +74,7 @@ struct OllamaClient {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                     request.timeoutInterval = 60
-                    request.httpBody = try JSONEncoder().encode(
-                        OllamaChatRequest(model: model, messages: messages, stream: true)
-                    )
+                    request.httpBody = try Self.buildBody(model: model, messages: messages, tools: tools)
 
                     let (bytes, response): (URLSession.AsyncBytes, URLResponse)
                     do {
@@ -80,24 +87,54 @@ struct OllamaClient {
                         throw OllamaClientError.network(message: "réponse non-HTTP")
                     }
                     guard (200..<300).contains(http.statusCode) else {
-                        throw OllamaClientError.http(status: http.statusCode)
+                        var body = ""
+                        for try await byte in bytes {
+                            body.append(Character(UnicodeScalar(byte)))
+                            if body.count > 1500 { break }
+                        }
+                        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+                        throw OllamaClientError.http(
+                            status: http.statusCode,
+                            body: trimmed.isEmpty ? nil : trimmed
+                        )
                     }
 
                     var buffer = Data()
                     for try await byte in bytes {
                         if Task.isCancelled { break }
-                        if byte == 0x0A { // newline
-                            let (delta, done) = try Self.parseChunk(line: buffer)
+                        if byte == 0x0A {
+                            let info = try Self.parseChunk(line: buffer)
                             buffer.removeAll(keepingCapacity: true)
-                            if let delta { continuation.yield(delta) }
-                            if done { continuation.finish(); return }
+                            if let delta = info.textDelta {
+                                continuation.yield(.textDelta(delta))
+                            }
+                            for tc in info.toolCalls {
+                                continuation.yield(.toolCall(
+                                    id: tc.id,
+                                    name: tc.name,
+                                    argumentsJSON: tc.argumentsJSON
+                                ))
+                            }
+                            if info.done {
+                                continuation.finish()
+                                return
+                            }
                         } else {
                             buffer.append(byte)
                         }
                     }
                     if !buffer.isEmpty {
-                        let (delta, _) = try Self.parseChunk(line: buffer)
-                        if let delta { continuation.yield(delta) }
+                        let info = try Self.parseChunk(line: buffer)
+                        if let delta = info.textDelta {
+                            continuation.yield(.textDelta(delta))
+                        }
+                        for tc in info.toolCalls {
+                            continuation.yield(.toolCall(
+                                id: tc.id,
+                                name: tc.name,
+                                argumentsJSON: tc.argumentsJSON
+                            ))
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -108,17 +145,159 @@ struct OllamaClient {
         }
     }
 
-    /// Parses one NDJSON line. Returns the content delta (nil if empty) and the
-    /// done flag. Empty/whitespace lines yield (nil, false).
-    static func parseChunk(line: Data) throws -> (delta: String?, done: Bool) {
+    // MARK: - Chunk parsing
+
+    struct ChunkInfo: Equatable {
+        let textDelta: String?
+        let toolCalls: [ToolCallInfo]
+        let done: Bool
+
+        struct ToolCallInfo: Equatable {
+            let id: String
+            let name: String
+            let argumentsJSON: String
+        }
+    }
+
+    /// Parses one NDJSON line. Ollama doesn't assign tool-call IDs, so we
+    /// synthesise one (UUID) per call — uniqueness within a conversation is
+    /// all our orchestration loop needs.
+    static func parseChunk(line: Data) throws -> ChunkInfo {
         let trimmed = line.trimmingPrefixAndSuffix(in: [0x20, 0x09, 0x0D])
-        guard !trimmed.isEmpty else { return (nil, false) }
+        guard !trimmed.isEmpty else {
+            return ChunkInfo(textDelta: nil, toolCalls: [], done: false)
+        }
         do {
             let chunk = try JSONDecoder().decode(OllamaChatChunk.self, from: trimmed)
-            return (chunk.message.content.isEmpty ? nil : chunk.message.content, chunk.done)
+            let textDelta = chunk.message.content.isEmpty ? nil : chunk.message.content
+            let toolCalls = (chunk.message.toolCalls ?? []).map { tc in
+                ChunkInfo.ToolCallInfo(
+                    id: UUID().uuidString,
+                    name: tc.function.name,
+                    argumentsJSON: tc.function.arguments.jsonString
+                )
+            }
+            return ChunkInfo(
+                textDelta: textDelta,
+                toolCalls: toolCalls,
+                done: chunk.done
+            )
         } catch {
             throw OllamaClientError.decoding(message: error.localizedDescription)
         }
+    }
+
+    // MARK: - Request body
+
+    /// Builds the request body as a dictionary so each tool's JSON Schema
+    /// and each tool-call's arguments embed as proper JSON objects.
+    static func buildBody(
+        model: String,
+        messages: [ChatMessage],
+        tools: [ToolSpec]
+    ) throws -> Data {
+        var dict: [String: Any] = [
+            "model": model,
+            "stream": true,
+            "messages": try messagesToDicts(messages)
+        ]
+        if !tools.isEmpty {
+            dict["tools"] = try tools.map { spec -> [String: Any] in
+                let parameters = try JSONSerialization.jsonObject(
+                    with: Data(spec.inputSchemaJSON.utf8)
+                )
+                return [
+                    "type": "function",
+                    "function": [
+                        "name": spec.name,
+                        "description": spec.description,
+                        "parameters": parameters
+                    ] as [String: Any]
+                ]
+            }
+        }
+        return try JSONSerialization.data(withJSONObject: dict, options: [])
+    }
+
+    /// Converts our flat ChatMessage history into Ollama's wire format.
+    /// The shape mirrors OpenAI's (assistant with optional tool_calls,
+    /// role="tool" for results) but Ollama expects `arguments` as a JSON
+    /// object, not a string — we parse before splicing in.
+    static func messagesToDicts(_ messages: [ChatMessage]) throws -> [[String: Any]] {
+        var out: [[String: Any]] = []
+        var i = 0
+        while i < messages.count {
+            let msg = messages[i]
+            switch msg.role {
+            case .system, .user:
+                out.append([
+                    "role": msg.role.rawValue,
+                    "content": msg.content
+                ])
+                i += 1
+
+            case .assistant:
+                var dict: [String: Any] = [
+                    "role": "assistant",
+                    "content": msg.content
+                ]
+                var calls: [[String: Any]] = []
+                var j = i + 1
+                while j < messages.count, messages[j].role == .toolCall {
+                    if let name = messages[j].toolName {
+                        let args = parseToolArgs(messages[j].content)
+                        calls.append([
+                            "function": [
+                                "name": name,
+                                "arguments": args
+                            ] as [String: Any]
+                        ])
+                    }
+                    j += 1
+                }
+                if !calls.isEmpty { dict["tool_calls"] = calls }
+                out.append(dict)
+                i = j
+
+            case .toolCall:
+                var calls: [[String: Any]] = []
+                var j = i
+                while j < messages.count, messages[j].role == .toolCall {
+                    if let name = messages[j].toolName {
+                        let args = parseToolArgs(messages[j].content)
+                        calls.append([
+                            "function": [
+                                "name": name,
+                                "arguments": args
+                            ] as [String: Any]
+                        ])
+                    }
+                    j += 1
+                }
+                out.append([
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": calls
+                ])
+                i = j
+
+            case .toolResult:
+                out.append([
+                    "role": "tool",
+                    "content": msg.content
+                ])
+                i += 1
+            }
+        }
+        return out
+    }
+
+    private static func parseToolArgs(_ json: String) -> Any {
+        guard let data = json.data(using: .utf8),
+              let parsed = try? JSONSerialization.jsonObject(with: data) else {
+            return [String: Any]()
+        }
+        return parsed
     }
 }
 

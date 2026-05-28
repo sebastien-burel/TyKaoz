@@ -33,8 +33,6 @@ struct OllamaProvider: LLMProvider {
     }
 
     func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
-        let ollamaMessages = dropToolMessages(messages)
-            .map { OllamaChatMessage(role: $0.role.rawValue, content: $0.content) }
-        return wrapAsTextStream(client.chat(model: model, messages: ollamaMessages))
+        client.chat(model: model, messages: messages, tools: tools)
     }
 }

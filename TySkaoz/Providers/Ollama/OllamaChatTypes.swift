@@ -1,17 +1,84 @@
 import Foundation
 
-struct OllamaChatMessage: Codable, Hashable {
-    let role: String
-    let content: String
-}
-
-struct OllamaChatRequest: Encodable {
-    let model: String
-    let messages: [OllamaChatMessage]
-    let stream: Bool
-}
-
+/// One NDJSON line returned by Ollama's `/api/chat`. Each chunk contains a
+/// snapshot of the assistant message; subsequent chunks REPLACE rather than
+/// extend (Ollama's API protocol). `message.content` ships the current text
+/// delta; `message.tool_calls` carries any tool invocations the model
+/// produced this round (atomic — Ollama doesn't stream arguments).
 struct OllamaChatChunk: Decodable {
-    let message: OllamaChatMessage
+    struct Message: Decodable {
+        let role: String?
+        let content: String
+        let toolCalls: [ToolCall]?
+
+        enum CodingKeys: String, CodingKey {
+            case role, content
+            case toolCalls = "tool_calls"
+        }
+    }
+
+    struct ToolCall: Decodable {
+        struct FunctionPayload: Decodable {
+            let name: String
+            /// Decoded as raw JSON data so we can re-emit it as a string.
+            /// Ollama sends arguments as a JSON object, not a string like
+            /// OpenAI.
+            let arguments: RawJSON
+        }
+        let function: FunctionPayload
+    }
+
+    let message: Message
     let done: Bool
+}
+
+/// Type-erased wrapper that lets us decode arbitrary JSON into a Swift value
+/// and re-encode it as a string. Used for tool-call arguments (Ollama emits
+/// them as a JSON object; our protocol carries them as a JSON string).
+struct RawJSON: Decodable {
+    let value: Any
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let dict = try? container.decode([String: RawJSON].self) {
+            self.value = dict.mapValues(\.value)
+        } else if let array = try? container.decode([RawJSON].self) {
+            self.value = array.map(\.value)
+        } else if let string = try? container.decode(String.self) {
+            self.value = string
+        } else if let number = try? container.decode(Double.self) {
+            self.value = number
+        } else if let bool = try? container.decode(Bool.self) {
+            self.value = bool
+        } else if container.decodeNil() {
+            self.value = NSNull()
+        } else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "RawJSON: unsupported value type"
+            )
+        }
+    }
+
+    var jsonString: String {
+        if let object = value as? [String: Any] {
+            let safe = JSONSerialization.isValidJSONObject(object) ? object : [String: Any]()
+            if let data = try? JSONSerialization.data(withJSONObject: safe),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "{}"
+        }
+        if let array = value as? [Any] {
+            if let data = try? JSONSerialization.data(withJSONObject: array),
+               let str = String(data: data, encoding: .utf8) {
+                return str
+            }
+            return "[]"
+        }
+        if let s = value as? String { return "\"\(s)\"" }
+        if let n = value as? Double { return "\(n)" }
+        if let b = value as? Bool { return b ? "true" : "false" }
+        return "null"
+    }
 }
