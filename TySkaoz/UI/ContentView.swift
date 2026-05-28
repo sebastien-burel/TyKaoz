@@ -3,27 +3,34 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(ConversationStore.self) private var store
+    @Environment(FileSpaceStore.self) private var fileSpaces
 
     @State private var selection: Conversation.ID?
 
-    /// Minimal default tool set wired up so the OpenAI-compatible providers
-    /// can exercise the loop end-to-end. Bloc 6 will replace this with a
-    /// curated, user-toggleable registry.
-    private let toolRegistry = ToolRegistry(tools: [
-        CurrentDateTimeTool(),
-        FetchURLTool()
-    ])
+    /// Built fresh each render so newly-authorised folders flow into the file
+    /// tools without restarting. Bloc 6 will make individual tools toggleable.
+    private var toolRegistry: ToolRegistry {
+        let roots = fileSpaces.authorizedRoots
+        return ToolRegistry(tools: [
+            CurrentDateTimeTool(),
+            FetchURLTool(),
+            ListDirectoryTool(roots: roots),
+            ReadFileTool(roots: roots),
+            GrepFilesTool(roots: roots)
+        ])
+    }
 
     var body: some View {
-        NavigationSplitView {
+        let tools = toolRegistry
+        return NavigationSplitView {
             ConversationsListView(selection: $selection)
                 .navigationTitle("TyKaoz")
         } detail: {
             ChatView(
                 conversation: selectedBinding,
-                provider: ProviderFactory.make(from: settings, tools: toolRegistry),
+                provider: ProviderFactory.make(from: settings, tools: tools),
                 providerID: settings.selectedProviderID,
-                tools: toolRegistry
+                tools: tools
             )
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {

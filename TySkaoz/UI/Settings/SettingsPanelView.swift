@@ -6,7 +6,7 @@ import SwiftUI
 struct SettingsPanelView: View {
     @Environment(AppSettings.self) private var settings
 
-    @State private var selection: ProviderID = .ollama
+    @State private var selection: SettingsSection = .provider(.ollama)
 
     var body: some View {
         NavigationSplitView {
@@ -15,13 +15,13 @@ struct SettingsPanelView: View {
         } detail: {
             detail
                 .frame(minWidth: 480, minHeight: 380)
-                .navigationTitle(selection.displayName)
+                .navigationTitle(selection.title)
         }
         .frame(minWidth: 720, minHeight: 440)
         .onAppear {
             // Open on the currently-active provider, if it matches.
             if let active = ProviderID(settings.selectedProviderID) {
-                selection = active
+                selection = .provider(active)
             }
         }
     }
@@ -29,13 +29,28 @@ struct SettingsPanelView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
-        case .ollama:    OllamaSettingsView()
-        case .mistral:   MistralSettingsView()
-        case .openai:    OpenAISettingsView()
-        case .anthropic: AnthropicSettingsView()
-        case .google:    GoogleSettingsView()
-        case .deepseek:  DeepSeekSettingsView()
-        case .apple:     AppleSettingsView()
+        case .provider(.ollama):    OllamaSettingsView()
+        case .provider(.mistral):   MistralSettingsView()
+        case .provider(.openai):    OpenAISettingsView()
+        case .provider(.anthropic): AnthropicSettingsView()
+        case .provider(.google):    GoogleSettingsView()
+        case .provider(.deepseek):  DeepSeekSettingsView()
+        case .provider(.apple):     AppleSettingsView()
+        case .fileSpaces:           FileSpacesSettingsView()
+        }
+    }
+}
+
+/// A selectable settings section: one per provider, plus the shared tools
+/// (file spaces) pane.
+enum SettingsSection: Hashable {
+    case provider(ProviderID)
+    case fileSpaces
+
+    var title: String {
+        switch self {
+        case .provider(let id): return id.displayName
+        case .fileSpaces:       return "Dossiers autorisés"
         }
     }
 }
@@ -44,29 +59,37 @@ struct SettingsPanelView: View {
 
 private struct ProvidersSidebar: View {
     @Environment(AppSettings.self) private var settings
-    @Binding var selection: ProviderID
+    @Binding var selection: SettingsSection
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Providers")
-                    .font(Brand.Fonts.body(11))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 4)
+                sectionLabel("Providers")
 
                 ForEach(ProviderID.allCases) { id in
-                    row(for: id)
+                    providerRow(for: id)
                 }
+
+                sectionLabel("Outils")
+                fileSpacesRow
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Brand.Colors.paper)
     }
 
-    private func row(for id: ProviderID) -> some View {
-        HStack(spacing: 8) {
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(Brand.Fonts.body(11))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+    }
+
+    private func providerRow(for id: ProviderID) -> some View {
+        let isSelected = selection == .provider(id)
+        return HStack(spacing: 8) {
             Circle()
                 .fill(dotColor(for: id))
                 .frame(width: 8, height: 8)
@@ -84,11 +107,34 @@ private struct ProvidersSidebar: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(selection == id ? Brand.Colors.slate.opacity(0.12) : .clear)
+                .fill(isSelected ? Brand.Colors.slate.opacity(0.12) : .clear)
         )
         .contentShape(Rectangle())
         .padding(.horizontal, 6)
-        .onTapGesture { selection = id }
+        .onTapGesture { selection = .provider(id) }
+    }
+
+    private var fileSpacesRow: some View {
+        let isSelected = selection == .fileSpaces
+        return HStack(spacing: 8) {
+            Image(systemName: "folder")
+                .font(.system(size: 11))
+                .foregroundStyle(Brand.Colors.tide)
+                .frame(width: 8)
+            Text("Dossiers")
+                .font(Brand.Fonts.body(13))
+                .foregroundStyle(Brand.Colors.ink)
+            Spacer()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Brand.Colors.slate.opacity(0.12) : .clear)
+        )
+        .contentShape(Rectangle())
+        .padding(.horizontal, 6)
+        .onTapGesture { selection = .fileSpaces }
     }
 
     /// Quick heuristic: green if a working configuration is on file, gray if
