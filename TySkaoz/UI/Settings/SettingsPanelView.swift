@@ -38,22 +38,25 @@ struct SettingsPanelView: View {
         case .provider(.apple):     AppleSettingsView()
         case .tools:                ToolsSettingsView()
         case .fileSpaces:           FileSpacesSettingsView()
+        case .memory:               MemorySettingsView()
         }
     }
 }
 
 /// A selectable settings section: one per provider, plus the shared tools
-/// panes (tool toggles and file spaces).
+/// panes (tool toggles, file spaces, memory).
 enum SettingsSection: Hashable {
     case provider(ProviderID)
     case tools
     case fileSpaces
+    case memory
 
     var title: String {
         switch self {
         case .provider(let id): return id.displayName
         case .tools:            return "Outils"
         case .fileSpaces:       return "Dossiers autorisés"
+        case .memory:           return "Mémoire"
         }
     }
 }
@@ -76,6 +79,7 @@ private struct ProvidersSidebar: View {
                 sectionLabel("Outils")
                 toolRow(title: "Outils", systemImage: "wrench.and.screwdriver", section: .tools)
                 toolRow(title: "Dossiers", systemImage: "folder", section: .fileSpaces)
+                toolRow(title: "Mémoire", systemImage: "brain", section: .memory)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

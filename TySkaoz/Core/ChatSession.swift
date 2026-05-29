@@ -24,7 +24,8 @@ final class ChatSession {
         text: String,
         in conversation: Binding<Conversation>,
         using provider: any LLMProvider,
-        tools: ToolRegistry = ToolRegistry(tools: [])
+        tools: ToolRegistry = ToolRegistry(tools: []),
+        memoryContext: String? = nil
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, state != .streaming else { return }
@@ -34,7 +35,12 @@ final class ChatSession {
 
         task = Task { [weak self] in
             do {
-                try await self?.runConversationLoop(in: conversation, provider: provider, tools: tools)
+                try await self?.runConversationLoop(
+                    in: conversation,
+                    provider: provider,
+                    tools: tools,
+                    memoryContext: memoryContext
+                )
                 self?.state = .idle
             } catch is CancellationError {
                 self?.state = .idle
@@ -66,7 +72,8 @@ final class ChatSession {
     private func runConversationLoop(
         in conversation: Binding<Conversation>,
         provider: any LLMProvider,
-        tools: ToolRegistry
+        tools: ToolRegistry,
+        memoryContext: String?
     ) async throws {
         for round in 0..<Self.maxToolRounds {
             if Task.isCancelled { return }
@@ -76,7 +83,13 @@ final class ChatSession {
             let assistantID = assistant.id
             conversation.wrappedValue.messages.append(assistant)
 
-            let history = conversation.wrappedValue.messages
+            // Inject long-term memory as a leading system message (never
+            // persisted to the conversation — purely request-time context).
+            var history: [ChatMessage] = []
+            if let memoryContext, !memoryContext.isEmpty {
+                history.append(ChatMessage(role: .system, content: memoryContext))
+            }
+            history += conversation.wrappedValue.messages
                 .dropLast()
                 .map { ChatMessage($0) }
 

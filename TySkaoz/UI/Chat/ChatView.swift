@@ -4,6 +4,7 @@ import MarkdownUI
 struct ChatView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AppSettings.self) private var settings
+    @Environment(MemoryStore.self) private var memory
 
     @Binding var conversation: Conversation?
     let provider: (any LLMProvider)?
@@ -250,7 +251,8 @@ struct ChatView: View {
                 set: { conversation = $0 }
             ),
             using: provider,
-            tools: tools
+            tools: tools,
+            memoryContext: settings.isToolEnabled("read_memory") ? memory.promptContext : nil
         )
     }
 }

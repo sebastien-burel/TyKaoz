@@ -33,18 +33,18 @@ struct ToolsSettingsView: View {
 
     private var toolList: some View {
         VStack(spacing: 0) {
-            ForEach(ToolCatalog.allSpecs, id: \.name) { spec in
+            ForEach(ToolCatalog.allToolNames, id: \.self) { name in
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(ToolCatalog.label(for: spec.name))
+                        Text(ToolCatalog.label(for: name))
                             .font(Brand.Fonts.body(13))
                             .foregroundStyle(Brand.Colors.ink)
-                        Text(spec.name)
+                        Text(name)
                             .font(Brand.Fonts.body(11))
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Toggle("", isOn: binding(for: spec.name))
+                    Toggle("", isOn: binding(for: name))
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }

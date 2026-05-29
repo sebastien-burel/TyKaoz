@@ -4,6 +4,7 @@ struct ContentView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(ConversationStore.self) private var store
     @Environment(FileSpaceStore.self) private var fileSpaces
+    @Environment(MemoryStore.self) private var memory
 
     @State private var selection: Conversation.ID?
 
@@ -12,6 +13,7 @@ struct ContentView: View {
     private var toolRegistry: ToolRegistry {
         ToolRegistry(tools: ToolCatalog.enabledTools(
             roots: fileSpaces.authorizedRoots,
+            memory: memory,
             settings: settings
         ))
     }
