@@ -5,17 +5,21 @@ struct ContentView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(FileSpaceStore.self) private var fileSpaces
     @Environment(MemoryStore.self) private var memory
+    @Environment(PluginStore.self) private var plugins
 
     @State private var selection: Conversation.ID?
 
-    /// Built fresh each render so newly-authorised folders and tool toggles
-    /// flow into the live registry without restarting.
+    /// Built fresh each render so newly-authorised folders, tool toggles and
+    /// installed plugins flow into the live registry without restarting.
     private var toolRegistry: ToolRegistry {
-        ToolRegistry(tools: ToolCatalog.enabledTools(
+        let builtins = ToolCatalog.enabledTools(
             roots: fileSpaces.authorizedRoots,
             memory: memory,
             settings: settings
-        ))
+        )
+        let pluginTools = plugins.tools()
+            .filter { settings.isToolEnabled($0.spec.name) }
+        return ToolRegistry(tools: builtins + pluginTools)
     }
 
     var body: some View {

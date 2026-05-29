@@ -6,6 +6,7 @@ struct TySkaozApp: App {
     @State private var conversationStore = ConversationStore()
     @State private var fileSpaceStore = FileSpaceStore()
     @State private var memoryStore = MemoryStore()
+    @State private var pluginStore = PluginStore()
 
     init() {
         FontRegistration.registerBundledFonts()
@@ -18,6 +19,7 @@ struct TySkaozApp: App {
                 .environment(conversationStore)
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
+                .environment(pluginStore)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
 
@@ -26,6 +28,7 @@ struct TySkaozApp: App {
                 .environment(settings)
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
+                .environment(pluginStore)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
     }

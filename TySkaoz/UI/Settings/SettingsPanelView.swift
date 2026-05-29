@@ -39,17 +39,19 @@ struct SettingsPanelView: View {
         case .tools:                ToolsSettingsView()
         case .fileSpaces:           FileSpacesSettingsView()
         case .memory:               MemorySettingsView()
+        case .plugins:              PluginsSettingsView()
         }
     }
 }
 
 /// A selectable settings section: one per provider, plus the shared tools
-/// panes (tool toggles, file spaces, memory).
+/// panes (tool toggles, file spaces, memory, plugins).
 enum SettingsSection: Hashable {
     case provider(ProviderID)
     case tools
     case fileSpaces
     case memory
+    case plugins
 
     var title: String {
         switch self {
@@ -57,6 +59,7 @@ enum SettingsSection: Hashable {
         case .tools:            return "Outils"
         case .fileSpaces:       return "Dossiers autorisés"
         case .memory:           return "Mémoire"
+        case .plugins:          return "Plugins"
         }
     }
 }
@@ -80,6 +83,7 @@ private struct ProvidersSidebar: View {
                 toolRow(title: "Outils", systemImage: "wrench.and.screwdriver", section: .tools)
                 toolRow(title: "Dossiers", systemImage: "folder", section: .fileSpaces)
                 toolRow(title: "Mémoire", systemImage: "brain", section: .memory)
+                toolRow(title: "Plugins", systemImage: "puzzlepiece.extension", section: .plugins)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
