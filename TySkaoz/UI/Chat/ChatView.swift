@@ -71,13 +71,15 @@ struct ChatView: View {
     }
 
     /// If the conversation still has its default title and just got its
-    /// first complete exchange (1 user + 1 assistant), kick off a background
-    /// title generation via the same provider. Snapshot the conversation so
-    /// we update the right one even if the user navigates away.
+    /// first complete exchange, kick off a background title generation via
+    /// the same provider. The first turn may include tool calls, so the
+    /// message count can exceed 2 (user + assistant intro + tool call +
+    /// tool result + assistant final…) — the `defaultTitle` guard handles
+    /// re-entry.
     private func autoRenameIfNeeded() {
         guard let conv = conversation, let provider,
               conv.title == ConversationTitler.defaultTitle,
-              conv.messages.count == 2
+              conv.messages.count >= 2
         else { return }
 
         let snapshot = conv
@@ -92,12 +94,18 @@ struct ChatView: View {
     @ViewBuilder
     private var messagesScroll: some View {
         if let conversation {
+            let turns = conversation.turns
+            let lastTurnID = turns.last?.id
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(conversation.messages) { message in
-                            row(for: message, in: conversation)
-                                .id(message.id)
+                        ForEach(turns) { turn in
+                            TurnView(
+                                turn: turn,
+                                conversation: conversation,
+                                isLive: turn.id == lastTurnID
+                                    && session.state == .streaming
+                            )
                         }
                     }
                     .padding(20)
@@ -110,28 +118,6 @@ struct ChatView: View {
                     }
                 }
             }
-        }
-    }
-
-    /// Tool calls render as collapsible cards (paired with their result);
-    /// tool results are folded into those cards, so they don't get their own
-    /// row. Everything else is a normal bubble.
-    @ViewBuilder
-    private func row(for message: Message, in conversation: Conversation) -> some View {
-        switch message.role {
-        case .toolCall:
-            ToolCallCard(call: message, result: toolResult(for: message, in: conversation))
-        case .toolResult:
-            EmptyView()
-        default:
-            MessageBubble(message: message)
-        }
-    }
-
-    private func toolResult(for call: Message, in conversation: Conversation) -> Message? {
-        guard let id = call.toolCallID else { return nil }
-        return conversation.messages.first {
-            $0.role == .toolResult && $0.toolCallID == id
         }
     }
 
@@ -363,6 +349,106 @@ private struct MessageBubble: View {
         switch message.role {
         case .user:                              return .clear
         case .assistant, .toolCall, .toolResult: return Brand.Colors.slate.opacity(0.15)
+        }
+    }
+}
+
+/// Renders one user → assistant exchange. Intermediate steps (preamble
+/// assistant texts + tool calls + tool results) live inside a disclosure
+/// that's expanded while the turn is streaming and collapses automatically
+/// once the turn ends.
+private struct TurnView: View {
+    let turn: Conversation.Turn
+    let conversation: Conversation
+    let isLive: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            MessageBubble(message: turn.userMessage)
+                .id(turn.userMessage.id)
+
+            if !turn.intermediates.isEmpty {
+                IntermediateStepsDisclosure(
+                    intermediates: turn.intermediates,
+                    conversation: conversation,
+                    isLive: isLive
+                )
+            }
+
+            if let final = turn.finalAssistant {
+                MessageBubble(message: final)
+                    .id(final.id)
+            }
+        }
+    }
+}
+
+private struct IntermediateStepsDisclosure: View {
+    let intermediates: [Message]
+    let conversation: Conversation
+    let isLive: Bool
+
+    @State private var isExpanded: Bool = false
+    @State private var initialized = false
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(intermediates) { message in
+                    intermediateRow(message)
+                }
+            }
+            .padding(.top, 8)
+            .padding(.leading, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "wrench.and.screwdriver")
+                    .font(.system(size: 12))
+                Text(labelText)
+                    .font(Brand.Fonts.body(13))
+            }
+            .foregroundStyle(Brand.Colors.slate.opacity(0.75))
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            guard !initialized else { return }
+            isExpanded = isLive
+            initialized = true
+        }
+        .onChange(of: isLive) { _, nowLive in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isExpanded = nowLive
+            }
+        }
+    }
+
+    private var labelText: String {
+        let toolCount = intermediates.filter { $0.role == .toolCall }.count
+        switch toolCount {
+        case 0:  return "Étapes intermédiaires"
+        case 1:  return "1 outil utilisé"
+        default: return "\(toolCount) outils utilisés"
+        }
+    }
+
+    @ViewBuilder
+    private func intermediateRow(_ message: Message) -> some View {
+        switch message.role {
+        case .toolCall:
+            ToolCallCard(call: message, result: toolResult(for: message))
+        case .toolResult:
+            EmptyView()
+        case .assistant:
+            MessageBubble(message: message)
+        case .user:
+            EmptyView()
+        }
+    }
+
+    private func toolResult(for call: Message) -> Message? {
+        guard let id = call.toolCallID else { return nil }
+        return conversation.messages.first {
+            $0.role == .toolResult && $0.toolCallID == id
         }
     }
 }

@@ -17,15 +17,22 @@ enum ConversationTitler {
         from conversation: Conversation,
         using provider: any LLMProvider
     ) async -> String? {
-        guard conversation.messages.count >= 2 else { return nil }
+        // Use the first user message paired with the *last* assistant
+        // message that actually has text. Tool-using turns emit a short
+        // preamble ("I'll first check your location…") that, fed to a
+        // titler, produces useless summaries of the intent rather than of
+        // the answer. The final assistant message holds the real content.
+        guard let userMessage = conversation.messages
+                .first(where: { $0.role == .user }),
+              let assistantMessage = conversation.messages
+                .last(where: { $0.role == .assistant && !$0.content.isEmpty })
+        else { return nil }
 
-        let exchange = conversation.messages
-            .prefix(2)
-            .map { message -> String in
-                let label = (message.role == .user) ? "Utilisateur" : "Assistant"
-                return "\(label) : \(message.content)"
-            }
-            .joined(separator: "\n\n")
+        let exchange = """
+        Utilisateur : \(userMessage.content)
+
+        Assistant : \(assistantMessage.content)
+        """
 
         let prompt = """
         Donne-moi un titre très court (3 à 5 mots, en français) qui résume ce début de conversation. Réponds UNIQUEMENT avec le titre, sans guillemets, sans préfixe, sans ponctuation finale.
