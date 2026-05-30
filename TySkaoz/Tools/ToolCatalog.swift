@@ -10,6 +10,7 @@ enum ToolCatalog {
     /// runtime stores).
     static let allToolNames: [String] = [
         "current_datetime",
+        "current_location",
         "fetch_url",
         "web_search",
         "list_directory",
@@ -32,6 +33,7 @@ enum ToolCatalog {
     ) -> [any Tool] {
         [
             CurrentDateTimeTool(),
+            CurrentLocationTool(),
             FetchURLTool(),
             BraveSearchTool(apiKey: braveAPIKey),
             ListDirectoryTool(roots: roots),
@@ -58,6 +60,7 @@ enum ToolCatalog {
     static func label(for name: String) -> String {
         switch name {
         case "current_datetime": return "Date et heure"
+        case "current_location": return "Position actuelle"
         case "fetch_url":        return "Récupérer une page web"
         case "web_search":       return "Recherche web (Brave)"
         case "list_directory":   return "Lister un dossier"
