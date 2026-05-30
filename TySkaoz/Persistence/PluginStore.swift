@@ -52,6 +52,12 @@ final class PluginStore {
     }
 
     func remove(id: UUID) {
+        // Clear any Keychain secrets this plugin owns before forgetting it.
+        if let plugin = plugins.first(where: { $0.id == id }) {
+            for name in secretNames(for: plugin) {
+                KeychainStore.remove(account: secretAccount(pluginID: id, name: name))
+            }
+        }
         plugins.removeAll { $0.id == id }
         save()
     }
@@ -61,12 +67,39 @@ final class PluginStore {
         try? PluginManifest(data: Data(plugin.manifestJSON.utf8))
     }
 
-    /// Every tool exposed by every installed plugin.
+    // MARK: - Secrets
+
+    /// The distinct secret placeholder names a plugin declares across its
+    /// tools (`***NAME***` markers in URLs/headers).
+    func secretNames(for plugin: StoredPlugin) -> [String] {
+        guard let manifest = manifest(for: plugin) else { return [] }
+        return Set(manifest.tools.flatMap { $0.secretNames }).sorted()
+    }
+
+    func secret(for plugin: StoredPlugin, name: String) -> String {
+        KeychainStore.get(account: secretAccount(pluginID: plugin.id, name: name)) ?? ""
+    }
+
+    func setSecret(_ value: String, for plugin: StoredPlugin, name: String) {
+        KeychainStore.set(value, account: secretAccount(pluginID: plugin.id, name: name))
+    }
+
+    private func secretAccount(pluginID: UUID, name: String) -> String {
+        "plugin.\(pluginID.uuidString).\(name)"
+    }
+
+    /// Every tool exposed by every installed plugin, with secret placeholders
+    /// resolved from the Keychain.
     func tools(session: URLSession = .shared) -> [any Tool] {
-        plugins
-            .compactMap { manifest(for: $0) }
-            .flatMap(\.tools)
-            .map { HTTPPluginTool(definition: $0, session: session) }
+        plugins.flatMap { plugin -> [any Tool] in
+            guard let manifest = manifest(for: plugin) else { return [] }
+            return manifest.tools.map { def in
+                let resolved = Dictionary(uniqueKeysWithValues: def.secretNames.map {
+                    ($0, secret(for: plugin, name: $0))
+                })
+                return HTTPPluginTool(definition: def, secrets: resolved, session: session)
+            }
+        }
     }
 
     // MARK: - Persistence

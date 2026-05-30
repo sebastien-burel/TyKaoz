@@ -32,26 +32,47 @@ struct ToolsSettingsView: View {
     }
 
     private var toolList: some View {
-        VStack(spacing: 0) {
+        @Bindable var settings = settings
+        return VStack(spacing: 0) {
             ForEach(ToolCatalog.allToolNames, id: \.self) { name in
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ToolCatalog.label(for: name))
-                            .font(Brand.Fonts.body(13))
-                            .foregroundStyle(Brand.Colors.ink)
-                        Text(name)
-                            .font(Brand.Fonts.body(11))
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ToolCatalog.label(for: name))
+                                .font(Brand.Fonts.body(13))
+                                .foregroundStyle(Brand.Colors.ink)
+                            Text(name)
+                                .font(Brand.Fonts.body(11))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Toggle("", isOn: binding(for: name))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
-                    Spacer(minLength: 0)
-                    Toggle("", isOn: binding(for: name))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
+                    if name == "web_search" {
+                        braveKeyField(apiKey: $settings.braveAPIKey)
+                    }
                 }
                 .padding(.vertical, 10)
                 Divider()
             }
         }
+    }
+
+    /// `web_search` needs a Brave subscription token; shown right under its
+    /// row. The tool stays toggleable, but reports an error if used without a
+    /// key.
+    private func braveKeyField(apiKey: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SecureField("Clé API Brave", text: apiKey, prompt: Text("Jeton d'abonnement Brave Search"))
+                .font(Brand.Fonts.mono(12))
+                .textFieldStyle(.roundedBorder)
+            Text("Stockée dans le trousseau macOS. Requise pour la recherche web.")
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 4)
     }
 
     private func binding(for name: String) -> Binding<Bool> {

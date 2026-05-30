@@ -218,6 +218,11 @@ final class AppSettings {
         didSet { defaults.set(Array(disabledTools), forKey: Keys.disabledTools) }
     }
 
+    /// Brave Search API subscription token, backing the `web_search` tool.
+    var braveAPIKey: String {
+        didSet { KeychainStore.set(braveAPIKey, account: KeychainAccounts.braveAPIKey) }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -256,6 +261,7 @@ final class AppSettings {
         self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
         self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
+        self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
     }
 
     private enum Keys {
@@ -283,5 +289,6 @@ final class AppSettings {
         static let anthropicAPIKey = "anthropic.apiKey"
         static let googleAPIKey = "google.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
+        static let braveAPIKey = "brave.apiKey"
     }
 }

@@ -102,23 +102,26 @@ struct PluginsSettingsView: View {
         VStack(spacing: 0) {
             ForEach(store.plugins) { plugin in
                 let manifest = store.manifest(for: plugin)
-                HStack(alignment: .top, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(manifest?.name ?? "Manifeste illisible")
-                            .font(Brand.Fonts.body(13))
-                            .foregroundStyle(Brand.Colors.ink)
-                        Text(toolSummary(manifest))
-                            .font(Brand.Fonts.body(11))
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(manifest?.name ?? "Manifeste illisible")
+                                .font(Brand.Fonts.body(13))
+                                .foregroundStyle(Brand.Colors.ink)
+                            Text(toolSummary(manifest))
+                                .font(Brand.Fonts.body(11))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        Button(role: .destructive) {
+                            store.remove(id: plugin.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Retirer ce plugin")
                     }
-                    Spacer(minLength: 0)
-                    Button(role: .destructive) {
-                        store.remove(id: plugin.id)
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Retirer ce plugin")
+                    secretFields(for: plugin)
                 }
                 .padding(.vertical, 8)
                 Divider()
@@ -129,6 +132,43 @@ struct PluginsSettingsView: View {
     private func toolSummary(_ manifest: PluginManifest?) -> String {
         guard let manifest else { return "—" }
         return manifest.tools.map(\.name).joined(separator: ", ")
+    }
+
+    /// One secure field per `***NAME***` placeholder the plugin declares. The
+    /// value is stored in the Keychain, never in the manifest on disk.
+    @ViewBuilder
+    private func secretFields(for plugin: StoredPlugin) -> some View {
+        let names = store.secretNames(for: plugin)
+        if !names.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(names, id: \.self) { name in
+                    HStack(spacing: 8) {
+                        Text(name)
+                            .font(Brand.Fonts.mono(11))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 110, alignment: .leading)
+                        SecureField(
+                            "Valeur",
+                            text: secretBinding(plugin: plugin, name: name),
+                            prompt: Text("clé / jeton")
+                        )
+                        .font(Brand.Fonts.mono(12))
+                        .textFieldStyle(.roundedBorder)
+                    }
+                }
+                Text("Stockées dans le trousseau macOS, jamais dans le fichier du plugin.")
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.leading, 4)
+        }
+    }
+
+    private func secretBinding(plugin: StoredPlugin, name: String) -> Binding<String> {
+        Binding(
+            get: { store.secret(for: plugin, name: name) },
+            set: { store.setSecret($0, for: plugin, name: name) }
+        )
     }
 
     // MARK: - Import

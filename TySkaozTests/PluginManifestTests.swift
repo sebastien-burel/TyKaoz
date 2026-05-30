@@ -67,4 +67,67 @@ struct PluginManifestTests {
             _ = try PluginManifest(data: Data(json.utf8))
         }
     }
+
+    // MARK: - Secret placeholders
+
+    @Test
+    func detectsSecretPlaceholdersInHeaders() throws {
+        let json = #"""
+        {"name":"p","tools":[{"name":"t","description":"d","input_schema":{"type":"object"},
+        "url":"https://x.io","headers":{"X-Token":"***APIKEY***","Accept":"application/json"}}]}
+        """#
+        let manifest = try PluginManifest(data: Data(json.utf8))
+        #expect(manifest.tools[0].secretNames == ["APIKEY"])
+    }
+
+    @Test
+    func detectsSecretPlaceholderInURL() throws {
+        let json = #"""
+        {"name":"p","tools":[{"name":"t","description":"d","input_schema":{"type":"object"},
+        "url":"https://x.io/?key=***TOKEN***"}]}
+        """#
+        let manifest = try PluginManifest(data: Data(json.utf8))
+        #expect(manifest.tools[0].secretNames == ["TOKEN"])
+    }
+
+    @Test
+    func substitutesKnownPlaceholdersOnly() {
+        let text = "Bearer ***A*** and ***B***"
+        let result = PluginSecrets.substitute(in: text, secrets: ["A": "secret"])
+        #expect(result == "Bearer secret and ***B***")
+    }
+
+    @Test
+    func substitutesArgumentPlaceholdersInURL() {
+        let template = "https://api.example.com/v8/finance/chart/{symbol}"
+        let (result, used) = PluginArguments.substitute(
+            in: template,
+            arguments: ["symbol": "AAPL", "range": "5d"]
+        )
+        #expect(result == "https://api.example.com/v8/finance/chart/AAPL")
+        // Only the path placeholder is consumed; `range` stays for the query.
+        #expect(used == ["symbol"])
+    }
+
+    @Test
+    func integerArgumentDoesNotBridgeToBool() {
+        // Regression: JSONSerialization gives NSNumber, and `as? Bool` matches
+        // 0/1 NSNumbers — `count: 1` must render as "1", not "true".
+        let json = Data(#"{"count":1,"flag":true}"#.utf8)
+        let dict = try! JSONSerialization.jsonObject(with: json) as! [String: Any]
+        let (result, _) = PluginArguments.substitute(
+            in: "https://x.io/{count}/{flag}",
+            arguments: dict
+        )
+        #expect(result == "https://x.io/1/true")
+    }
+
+    @Test
+    func percentEncodesArgumentValues() {
+        let (result, _) = PluginArguments.substitute(
+            in: "https://x.io/{q}",
+            arguments: ["q": "a b&c"]
+        )
+        #expect(result == "https://x.io/a%20b&c" || result == "https://x.io/a%20b%26c")
+    }
 }

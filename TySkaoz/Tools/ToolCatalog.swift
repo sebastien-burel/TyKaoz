@@ -11,6 +11,7 @@ enum ToolCatalog {
     static let allToolNames: [String] = [
         "current_datetime",
         "fetch_url",
+        "web_search",
         "list_directory",
         "read_file",
         "grep_files",
@@ -19,13 +20,20 @@ enum ToolCatalog {
         "read_memory"
     ]
 
-    /// Every built-in tool, bound to the current authorised folders and the
-    /// memory store.
+    /// Every built-in tool, bound to the current authorised folders, the
+    /// memory store and credentials. `web_search` is always present (and
+    /// toggleable like the rest); it reports a clear error if invoked without
+    /// a Brave key, mirroring how the file tools behave without folders.
     @MainActor
-    static func allTools(roots: [AuthorizedRoot], memory: MemoryStore) -> [any Tool] {
+    static func allTools(
+        roots: [AuthorizedRoot],
+        memory: MemoryStore,
+        braveAPIKey: String
+    ) -> [any Tool] {
         [
             CurrentDateTimeTool(),
             FetchURLTool(),
+            BraveSearchTool(apiKey: braveAPIKey),
             ListDirectoryTool(roots: roots),
             ReadFileTool(roots: roots),
             GrepFilesTool(roots: roots),
@@ -42,7 +50,7 @@ enum ToolCatalog {
         memory: MemoryStore,
         settings: AppSettings
     ) -> [any Tool] {
-        allTools(roots: roots, memory: memory)
+        allTools(roots: roots, memory: memory, braveAPIKey: settings.braveAPIKey)
             .filter { settings.isToolEnabled($0.spec.name) }
     }
 
@@ -51,6 +59,7 @@ enum ToolCatalog {
         switch name {
         case "current_datetime": return "Date et heure"
         case "fetch_url":        return "Récupérer une page web"
+        case "web_search":       return "Recherche web (Brave)"
         case "list_directory":   return "Lister un dossier"
         case "read_file":        return "Lire un fichier"
         case "grep_files":       return "Rechercher dans les fichiers"

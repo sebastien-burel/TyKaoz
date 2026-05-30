@@ -5,10 +5,12 @@ import Foundation
 /// body, GET maps them to query items — and returns the response body as text.
 struct HTTPPluginTool: Tool {
     let definition: PluginToolDef
+    let secrets: [String: String]
     let session: URLSession
 
-    init(definition: PluginToolDef, session: URLSession = .shared) {
+    init(definition: PluginToolDef, secrets: [String: String] = [:], session: URLSession = .shared) {
         self.definition = definition
+        self.secrets = secrets
         self.session = session
     }
 
@@ -48,9 +50,12 @@ struct HTTPPluginTool: Tool {
     }
 
     private func buildRequest(arguments: Data) throws -> URLRequest {
+        let argDict = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] ?? [:]
+        let (resolvedURL, usedKeys) = try self.resolvedURL(arguments: argDict)
+
         switch definition.method {
         case .post:
-            var request = URLRequest(url: definition.url)
+            var request = URLRequest(url: resolvedURL)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = arguments.isEmpty ? Data("{}".utf8) : arguments
@@ -59,16 +64,17 @@ struct HTTPPluginTool: Tool {
             return request
 
         case .get:
-            guard var components = URLComponents(url: definition.url, resolvingAgainstBaseURL: false) else {
+            guard var components = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: false) else {
                 throw ToolError.execution(message: "URL invalide")
             }
-            if let dict = (try? JSONSerialization.jsonObject(with: arguments)) as? [String: Any] {
-                let items = dict
-                    .sorted { $0.key < $1.key }
-                    .map { URLQueryItem(name: $0.key, value: Self.stringify($0.value)) }
-                if !items.isEmpty {
-                    components.queryItems = (components.queryItems ?? []) + items
-                }
+            // Append only the arguments not already consumed by {placeholders}
+            // in the URL path/query.
+            let items = argDict
+                .filter { !usedKeys.contains($0.key) }
+                .sorted { $0.key < $1.key }
+                .map { URLQueryItem(name: $0.key, value: Self.stringify($0.value)) }
+            if !items.isEmpty {
+                components.queryItems = (components.queryItems ?? []) + items
             }
             guard let url = components.url else {
                 throw ToolError.execution(message: "construction d'URL impossible")
@@ -81,15 +87,37 @@ struct HTTPPluginTool: Tool {
         }
     }
 
+    /// Substitutes secret then argument placeholders in the URL template and
+    /// returns the resulting URL plus the argument names consumed by it.
+    private func resolvedURL(arguments: [String: Any]) throws -> (URL, Set<String>) {
+        let withSecrets = PluginSecrets.substitute(in: definition.urlTemplate, secrets: secrets)
+        let (filled, usedKeys) = PluginArguments.substitute(in: withSecrets, arguments: arguments)
+        guard let url = URL(string: filled) else {
+            throw ToolError.execution(message: "URL invalide après substitution : \(filled)")
+        }
+        return (url, usedKeys)
+    }
+
     private func applyHeaders(_ request: inout URLRequest) {
         for (key, value) in definition.headers {
-            request.setValue(value, forHTTPHeaderField: key)
+            request.setValue(
+                PluginSecrets.substitute(in: value, secrets: secrets),
+                forHTTPHeaderField: key
+            )
         }
     }
 
+    /// JSONSerialization hands us NSNumber for every numeric/bool; `as? Bool`
+    /// then matches *any* NSNumber whose value is 0 or 1 (the bridging trap),
+    /// so we must check the underlying CF type to tell `true` from `1`.
     private static func stringify(_ value: Any) -> String {
         if let s = value as? String { return s }
-        if let b = value as? Bool { return b ? "true" : "false" }
+        if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                return number.boolValue ? "true" : "false"
+            }
+            return number.stringValue
+        }
         return String(describing: value)
     }
 }

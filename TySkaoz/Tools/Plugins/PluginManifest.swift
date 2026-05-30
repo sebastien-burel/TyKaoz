@@ -19,9 +19,24 @@ struct PluginToolDef: Equatable {
     let name: String
     let description: String
     let inputSchemaJSON: String
-    let url: URL
+    /// URL with two kinds of placeholder: `{arg}` filled from the model's tool
+    /// arguments (path/query templating), and `***SECRET***` filled from the
+    /// Keychain. Stored as a string because templated URLs aren't valid `URL`s
+    /// until substituted.
+    let urlTemplate: String
     let method: Method
     let headers: [String: String]
+
+    /// Secret placeholder names (`***NAME***`) referenced in this tool's URL
+    /// or headers. These are filled by the user and stored in the Keychain,
+    /// never in the manifest.
+    var secretNames: Set<String> {
+        var names = PluginSecrets.placeholders(in: urlTemplate)
+        for value in headers.values {
+            names.formUnion(PluginSecrets.placeholders(in: value))
+        }
+        return names
+    }
 }
 
 enum PluginError: Error, LocalizedError, Equatable {
@@ -77,9 +92,11 @@ extension PluginToolDef {
         guard let urlString = dict["url"] as? String else {
             throw PluginError.missingField("tools[].url")
         }
-        guard let url = URL(string: urlString),
-              let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
+        // The template may contain {arg}/***SECRET*** placeholders, so it
+        // isn't necessarily a parseable URL yet — validate the scheme by
+        // prefix instead.
+        let lower = urlString.lowercased()
+        guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else {
             throw PluginError.invalidURL(urlString)
         }
 
@@ -89,7 +106,7 @@ extension PluginToolDef {
         self.name = name
         self.description = description
         self.inputSchemaJSON = schemaJSON
-        self.url = url
+        self.urlTemplate = urlString
         self.method = method
         self.headers = headers
     }

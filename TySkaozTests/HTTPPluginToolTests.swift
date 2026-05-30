@@ -5,12 +5,15 @@ import Testing
 @Suite @MainActor
 struct HTTPPluginToolTests {
 
-    private func def(method: PluginToolDef.Method = .post) -> PluginToolDef {
+    private func def(
+        method: PluginToolDef.Method = .post,
+        urlTemplate: String = "https://api.example.com/echo"
+    ) -> PluginToolDef {
         PluginToolDef(
             name: "echo",
             description: "echo",
             inputSchemaJSON: #"{"type":"object"}"#,
-            url: URL(string: "https://api.example.com/echo")!,
+            urlTemplate: urlTemplate,
             method: method,
             headers: [:]
         )
