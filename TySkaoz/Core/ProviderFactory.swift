@@ -51,6 +51,20 @@ enum ProviderFactory {
             else { return nil }
             return DeepSeekProvider(apiKey: settings.deepseekAPIKey, model: model)
 
+        case "qwen":
+            guard !settings.qwenAPIKey.isEmpty,
+                  let model = settings.qwenModel,
+                  !model.isEmpty
+            else { return nil }
+            return QwenProvider(apiKey: settings.qwenAPIKey, model: model)
+
+        case "zai":
+            guard !settings.zaiAPIKey.isEmpty,
+                  let model = settings.zaiModel,
+                  !model.isEmpty
+            else { return nil }
+            return ZAIProvider(apiKey: settings.zaiAPIKey, model: model)
+
         default:
             return nil
         }

@@ -66,6 +66,8 @@ struct ChatView: View {
         case "anthropic": return settings.anthropicModel
         case "google":    return settings.googleModel
         case "deepseek":  return settings.deepseekModel
+        case "qwen":      return settings.qwenModel
+        case "zai":       return settings.zaiModel
         default:          return nil
         }
     }
@@ -211,6 +213,8 @@ struct ChatView: View {
             case "anthropic": return "Renseignez votre clé Anthropic et choisissez un modèle…"
             case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
             case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
+            case "qwen":      return "Renseignez votre clé Qwen Cloud et choisissez un modèle…"
+            case "zai":       return "Renseignez votre clé z.ai et choisissez un modèle…"
             case "apple":     return "Apple Intelligence indisponible — voir les réglages."
             default:          return "Sélectionnez un provider dans les réglages…"
             }

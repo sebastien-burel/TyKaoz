@@ -56,6 +56,10 @@ struct ChatModelPicker: View {
             return formatLabel(provider, model: settings.googleModel)
         case .deepseek:
             return formatLabel(provider, model: settings.deepseekModel)
+        case .qwen:
+            return formatLabel(provider, model: settings.qwenModel)
+        case .zai:
+            return formatLabel(provider, model: settings.zaiModel)
         }
     }
 
@@ -115,6 +119,8 @@ struct ChatModelPicker: View {
         case .anthropic: return settings.anthropicModel == model
         case .google:    return settings.googleModel == model
         case .deepseek:  return settings.deepseekModel == model
+        case .qwen:      return settings.qwenModel == model
+        case .zai:       return settings.zaiModel == model
         }
     }
 
@@ -127,6 +133,8 @@ struct ChatModelPicker: View {
         case .anthropic: settings.anthropicModel = model
         case .google:    settings.googleModel = model
         case .deepseek:  settings.deepseekModel = model
+        case .qwen:      settings.qwenModel = model
+        case .zai:       settings.zaiModel = model
         case .apple:     break
         }
     }

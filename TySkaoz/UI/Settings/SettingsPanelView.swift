@@ -35,6 +35,8 @@ struct SettingsPanelView: View {
         case .provider(.anthropic): AnthropicSettingsView()
         case .provider(.google):    GoogleSettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
+        case .provider(.qwen):      QwenSettingsView()
+        case .provider(.zai):       ZAISettingsView()
         case .provider(.apple):     AppleSettingsView()
         case .tools:                ToolsSettingsView()
         case .fileSpaces:           FileSpacesSettingsView()
@@ -172,6 +174,12 @@ private struct ProvidersSidebar: View {
         case .deepseek:
             return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
                 ? .green : .gray
+        case .qwen:
+            return (!settings.qwenAPIKey.isEmpty && settings.qwenModel?.isEmpty == false)
+                ? .green : .gray
+        case .zai:
+            return (!settings.zaiAPIKey.isEmpty && settings.zaiModel?.isEmpty == false)
+                ? .green : .gray
         case .apple:
             return AppleIntelligenceProvider.isReady ? .green : .gray
         }
@@ -187,6 +195,8 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case anthropic
     case google
     case deepseek
+    case qwen
+    case zai
     case apple
 
     var id: String { rawValue }
@@ -199,6 +209,8 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case "anthropic": self = .anthropic
         case "google":    self = .google
         case "deepseek":  self = .deepseek
+        case "qwen":      self = .qwen
+        case "zai":       self = .zai
         case "apple":     self = .apple
         default:          return nil
         }
@@ -212,6 +224,8 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case .anthropic: return "Anthropic"
         case .google:    return "Google Gemini"
         case .deepseek:  return "DeepSeek"
+        case .qwen:      return "Qwen Cloud"
+        case .zai:       return "z.ai"
         case .apple:     return "Apple Intelligence"
         }
     }

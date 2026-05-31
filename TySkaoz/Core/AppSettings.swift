@@ -82,6 +82,26 @@ final class AppSettings {
         didSet { defaults.set(deepseekModel, forKey: Keys.deepseekModel) }
     }
 
+    // MARK: - Qwen Cloud
+
+    var qwenAPIKey: String {
+        didSet { KeychainStore.set(qwenAPIKey, account: KeychainAccounts.qwenAPIKey) }
+    }
+
+    var qwenModel: String? {
+        didSet { defaults.set(qwenModel, forKey: Keys.qwenModel) }
+    }
+
+    // MARK: - z.ai (Zhipu GLM)
+
+    var zaiAPIKey: String {
+        didSet { KeychainStore.set(zaiAPIKey, account: KeychainAccounts.zaiAPIKey) }
+    }
+
+    var zaiModel: String? {
+        didSet { defaults.set(zaiModel, forKey: Keys.zaiModel) }
+    }
+
     // MARK: - Per-provider catalogs
 
     var ollamaCatalog: [String] = [] {
@@ -108,6 +128,14 @@ final class AppSettings {
         didSet { defaults.set(deepseekCatalog, forKey: Keys.catalog(.deepseek)) }
     }
 
+    var qwenCatalog: [String] = [] {
+        didSet { defaults.set(qwenCatalog, forKey: Keys.catalog(.qwen)) }
+    }
+
+    var zaiCatalog: [String] = [] {
+        didSet { defaults.set(zaiCatalog, forKey: Keys.catalog(.zai)) }
+    }
+
     func catalog(for provider: ProviderID) -> [String] {
         switch provider {
         case .ollama:    return ollamaCatalog
@@ -116,6 +144,8 @@ final class AppSettings {
         case .anthropic: return anthropicCatalog
         case .google:    return googleCatalog
         case .deepseek:  return deepseekCatalog
+        case .qwen:      return qwenCatalog
+        case .zai:       return zaiCatalog
         case .apple:     return []
         }
     }
@@ -128,6 +158,8 @@ final class AppSettings {
         case .anthropic: anthropicCatalog = ids
         case .google:    googleCatalog = ids
         case .deepseek:  deepseekCatalog = ids
+        case .qwen:      qwenCatalog = ids
+        case .zai:       zaiCatalog = ids
         case .apple:     break
         }
         // Prune previously-enabled models that no longer exist in the
@@ -167,6 +199,14 @@ final class AppSettings {
         didSet { defaults.set(Array(enabledDeepSeekModels), forKey: Keys.enabledModels(for: .deepseek)) }
     }
 
+    var enabledQwenModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledQwenModels), forKey: Keys.enabledModels(for: .qwen)) }
+    }
+
+    var enabledZAIModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledZAIModels), forKey: Keys.enabledModels(for: .zai)) }
+    }
+
     func enabledModels(for provider: ProviderID) -> Set<String> {
         switch provider {
         case .ollama:    return enabledOllamaModels
@@ -175,6 +215,8 @@ final class AppSettings {
         case .anthropic: return enabledAnthropicModels
         case .google:    return enabledGoogleModels
         case .deepseek:  return enabledDeepSeekModels
+        case .qwen:      return enabledQwenModels
+        case .zai:       return enabledZAIModels
         case .apple:     return []
         }
     }
@@ -199,6 +241,12 @@ final class AppSettings {
         case .deepseek:
             if enabled { enabledDeepSeekModels.insert(modelID) } else { enabledDeepSeekModels.remove(modelID) }
             constrainActive(&deepseekModel, to: enabledDeepSeekModels)
+        case .qwen:
+            if enabled { enabledQwenModels.insert(modelID) } else { enabledQwenModels.remove(modelID) }
+            constrainActive(&qwenModel, to: enabledQwenModels)
+        case .zai:
+            if enabled { enabledZAIModels.insert(modelID) } else { enabledZAIModels.remove(modelID) }
+            constrainActive(&zaiModel, to: enabledZAIModels)
         case .apple:
             break
         }
@@ -248,18 +296,26 @@ final class AppSettings {
         self.googleModel = defaults.string(forKey: Keys.googleModel)
         self.deepseekAPIKey = KeychainStore.get(account: KeychainAccounts.deepseekAPIKey) ?? ""
         self.deepseekModel = defaults.string(forKey: Keys.deepseekModel)
+        self.qwenAPIKey = KeychainStore.get(account: KeychainAccounts.qwenAPIKey) ?? ""
+        self.qwenModel = defaults.string(forKey: Keys.qwenModel)
+        self.zaiAPIKey = KeychainStore.get(account: KeychainAccounts.zaiAPIKey) ?? ""
+        self.zaiModel = defaults.string(forKey: Keys.zaiModel)
         self.ollamaCatalog = defaults.array(forKey: Keys.catalog(.ollama)) as? [String] ?? []
         self.mistralCatalog = defaults.array(forKey: Keys.catalog(.mistral)) as? [String] ?? []
         self.openaiCatalog = defaults.array(forKey: Keys.catalog(.openai)) as? [String] ?? []
         self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
         self.googleCatalog = defaults.array(forKey: Keys.catalog(.google)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
+        self.qwenCatalog = defaults.array(forKey: Keys.catalog(.qwen)) as? [String] ?? []
+        self.zaiCatalog = defaults.array(forKey: Keys.catalog(.zai)) as? [String] ?? []
         self.enabledOllamaModels = Set(defaults.array(forKey: Keys.enabledModels(for: .ollama)) as? [String] ?? [])
         self.enabledMistralModels = Set(defaults.array(forKey: Keys.enabledModels(for: .mistral)) as? [String] ?? [])
         self.enabledOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .openai)) as? [String] ?? [])
         self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
         self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
+        self.enabledQwenModels = Set(defaults.array(forKey: Keys.enabledModels(for: .qwen)) as? [String] ?? [])
+        self.enabledZAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .zai)) as? [String] ?? [])
         self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
         self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
     }
@@ -273,6 +329,8 @@ final class AppSettings {
         static let anthropicModel = "anthropic.selectedModel"
         static let googleModel = "google.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
+        static let qwenModel = "qwen.selectedModel"
+        static let zaiModel = "zai.selectedModel"
         static let disabledTools = "tools.disabled"
 
         static func enabledModels(for provider: ProviderID) -> String {
@@ -289,6 +347,8 @@ final class AppSettings {
         static let anthropicAPIKey = "anthropic.apiKey"
         static let googleAPIKey = "google.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
+        static let qwenAPIKey = "qwen.apiKey"
+        static let zaiAPIKey = "zai.apiKey"
         static let braveAPIKey = "brave.apiKey"
     }
 }
