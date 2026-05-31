@@ -60,12 +60,12 @@ struct ChatView: View {
 
     private func activeModelForCurrentProvider() -> String? {
         switch providerID {
-        case "ollama":    return settings.selectedModel
-        case "mistral":   return settings.mistralModel
-        case "openai":    return settings.openaiModel
         case "anthropic": return settings.anthropicModel
-        case "google":    return settings.googleModel
         case "deepseek":  return settings.deepseekModel
+        case "google":    return settings.googleModel
+        case "mistral":   return settings.mistralModel
+        case "ollama":    return settings.selectedModel
+        case "openai":    return settings.openaiModel
         case "qwen":      return settings.qwenModel
         case "zai":       return settings.zaiModel
         default:          return nil
@@ -207,15 +207,15 @@ struct ChatView: View {
     private var placeholder: String {
         if provider == nil {
             switch providerID {
-            case "ollama":    return "Configurez Ollama (serveur + modèle) dans les réglages…"
-            case "mistral":   return "Renseignez votre clé Mistral et choisissez un modèle…"
-            case "openai":    return "Renseignez votre clé OpenAI et choisissez un modèle…"
             case "anthropic": return "Renseignez votre clé Anthropic et choisissez un modèle…"
-            case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
+            case "apple":     return "Apple Intelligence indisponible — voir les réglages."
             case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
+            case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
+            case "mistral":   return "Renseignez votre clé Mistral et choisissez un modèle…"
+            case "ollama":    return "Configurez Ollama (serveur + modèle) dans les réglages…"
+            case "openai":    return "Renseignez votre clé OpenAI et choisissez un modèle…"
             case "qwen":      return "Renseignez votre clé Qwen Cloud et choisissez un modèle…"
             case "zai":       return "Renseignez votre clé z.ai et choisissez un modèle…"
-            case "apple":     return "Apple Intelligence indisponible — voir les réglages."
             default:          return "Sélectionnez un provider dans les réglages…"
             }
         }

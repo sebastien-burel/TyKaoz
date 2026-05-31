@@ -42,20 +42,20 @@ struct ChatModelPicker: View {
             return "Aucun modèle"
         }
         switch provider {
-        case .apple:
-            return provider.displayName
-        case .ollama:
-            return formatLabel(provider, model: settings.selectedModel)
-        case .mistral:
-            return formatLabel(provider, model: settings.mistralModel)
-        case .openai:
-            return formatLabel(provider, model: settings.openaiModel)
         case .anthropic:
             return formatLabel(provider, model: settings.anthropicModel)
-        case .google:
-            return formatLabel(provider, model: settings.googleModel)
+        case .apple:
+            return provider.displayName
         case .deepseek:
             return formatLabel(provider, model: settings.deepseekModel)
+        case .google:
+            return formatLabel(provider, model: settings.googleModel)
+        case .mistral:
+            return formatLabel(provider, model: settings.mistralModel)
+        case .ollama:
+            return formatLabel(provider, model: settings.selectedModel)
+        case .openai:
+            return formatLabel(provider, model: settings.openaiModel)
         case .qwen:
             return formatLabel(provider, model: settings.qwenModel)
         case .zai:
@@ -112,13 +112,13 @@ struct ChatModelPicker: View {
     private func isActive(provider: ProviderID, model: String?) -> Bool {
         guard settings.selectedProviderID == provider.rawValue else { return false }
         switch provider {
-        case .apple:     return true
-        case .ollama:    return settings.selectedModel == model
-        case .mistral:   return settings.mistralModel == model
-        case .openai:    return settings.openaiModel == model
         case .anthropic: return settings.anthropicModel == model
-        case .google:    return settings.googleModel == model
+        case .apple:     return true
         case .deepseek:  return settings.deepseekModel == model
+        case .google:    return settings.googleModel == model
+        case .mistral:   return settings.mistralModel == model
+        case .ollama:    return settings.selectedModel == model
+        case .openai:    return settings.openaiModel == model
         case .qwen:      return settings.qwenModel == model
         case .zai:       return settings.zaiModel == model
         }
@@ -127,15 +127,15 @@ struct ChatModelPicker: View {
     private func activate(provider: ProviderID, model: String?) {
         settings.selectedProviderID = provider.rawValue
         switch provider {
-        case .ollama:    settings.selectedModel = model
-        case .mistral:   settings.mistralModel = model
-        case .openai:    settings.openaiModel = model
         case .anthropic: settings.anthropicModel = model
-        case .google:    settings.googleModel = model
+        case .apple:     break
         case .deepseek:  settings.deepseekModel = model
+        case .google:    settings.googleModel = model
+        case .mistral:   settings.mistralModel = model
+        case .ollama:    settings.selectedModel = model
+        case .openai:    settings.openaiModel = model
         case .qwen:      settings.qwenModel = model
         case .zai:       settings.zaiModel = model
-        case .apple:     break
         }
     }
 }

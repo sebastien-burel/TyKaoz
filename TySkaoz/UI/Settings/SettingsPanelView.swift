@@ -29,15 +29,15 @@ struct SettingsPanelView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
-        case .provider(.ollama):    OllamaSettingsView()
-        case .provider(.mistral):   MistralSettingsView()
-        case .provider(.openai):    OpenAISettingsView()
         case .provider(.anthropic): AnthropicSettingsView()
-        case .provider(.google):    GoogleSettingsView()
+        case .provider(.apple):     AppleSettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
+        case .provider(.google):    GoogleSettingsView()
+        case .provider(.mistral):   MistralSettingsView()
+        case .provider(.ollama):    OllamaSettingsView()
+        case .provider(.openai):    OpenAISettingsView()
         case .provider(.qwen):      QwenSettingsView()
         case .provider(.zai):       ZAISettingsView()
-        case .provider(.apple):     AppleSettingsView()
         case .tools:                ToolsSettingsView()
         case .fileSpaces:           FileSpacesSettingsView()
         case .memory:               MemorySettingsView()
@@ -156,23 +156,25 @@ private struct ProvidersSidebar: View {
     /// just based on local state to stay snappy.)
     private func dotColor(for id: ProviderID) -> Color {
         switch id {
-        case .ollama:
-            return (settings.serverURL != nil && settings.selectedModel?.isEmpty == false)
-                ? .green : .gray
-        case .mistral:
-            return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
-                ? .green : .gray
-        case .openai:
-            return (!settings.openaiAPIKey.isEmpty && settings.openaiModel?.isEmpty == false)
-                ? .green : .gray
         case .anthropic:
             return (!settings.anthropicAPIKey.isEmpty && settings.anthropicModel?.isEmpty == false)
+                ? .green : .gray
+        case .apple:
+            return AppleIntelligenceProvider.isReady ? .green : .gray
+        case .deepseek:
+            return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
                 ? .green : .gray
         case .google:
             return (!settings.googleAPIKey.isEmpty && settings.googleModel?.isEmpty == false)
                 ? .green : .gray
-        case .deepseek:
-            return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
+        case .mistral:
+            return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
+                ? .green : .gray
+        case .ollama:
+            return (settings.serverURL != nil && settings.selectedModel?.isEmpty == false)
+                ? .green : .gray
+        case .openai:
+            return (!settings.openaiAPIKey.isEmpty && settings.openaiModel?.isEmpty == false)
                 ? .green : .gray
         case .qwen:
             return (!settings.qwenAPIKey.isEmpty && settings.qwenModel?.isEmpty == false)
@@ -180,8 +182,6 @@ private struct ProvidersSidebar: View {
         case .zai:
             return (!settings.zaiAPIKey.isEmpty && settings.zaiModel?.isEmpty == false)
                 ? .green : .gray
-        case .apple:
-            return AppleIntelligenceProvider.isReady ? .green : .gray
         }
     }
 }
@@ -189,44 +189,44 @@ private struct ProvidersSidebar: View {
 // MARK: - Provider identity
 
 enum ProviderID: String, CaseIterable, Identifiable, Hashable {
-    case ollama
-    case mistral
-    case openai
     case anthropic
-    case google
+    case apple
     case deepseek
+    case google
+    case mistral
+    case ollama
+    case openai
     case qwen
     case zai
-    case apple
 
     var id: String { rawValue }
 
     init?(_ raw: String) {
         switch raw {
-        case "ollama":    self = .ollama
-        case "mistral":   self = .mistral
-        case "openai":    self = .openai
         case "anthropic": self = .anthropic
-        case "google":    self = .google
+        case "apple":     self = .apple
         case "deepseek":  self = .deepseek
+        case "google":    self = .google
+        case "mistral":   self = .mistral
+        case "ollama":    self = .ollama
+        case "openai":    self = .openai
         case "qwen":      self = .qwen
         case "zai":       self = .zai
-        case "apple":     self = .apple
         default:          return nil
         }
     }
 
     var displayName: String {
         switch self {
-        case .ollama:    return "Ollama"
-        case .mistral:   return "Mistral"
-        case .openai:    return "OpenAI"
         case .anthropic: return "Anthropic"
-        case .google:    return "Google Gemini"
+        case .apple:     return "Apple Intelligence"
         case .deepseek:  return "DeepSeek"
+        case .google:    return "Google Gemini"
+        case .mistral:   return "Mistral"
+        case .ollama:    return "Ollama"
+        case .openai:    return "OpenAI"
         case .qwen:      return "Qwen Cloud"
         case .zai:       return "z.ai"
-        case .apple:     return "Apple Intelligence"
         }
     }
 }
