@@ -42,6 +42,7 @@ struct ConversationsListView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($listFocused)
+        .focusedSceneValue(\.newConversationAction, createConversation)
         .toolbar {
             ToolbarItem {
                 Button(action: createConversation) {

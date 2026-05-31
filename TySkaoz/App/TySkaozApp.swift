@@ -2,6 +2,10 @@ import SwiftUI
 
 @main
 struct TySkaozApp: App {
+    /// Identifier the menu's "Nouvelle fenêtre" command uses with
+    /// `openWindow(id:)` to spawn a new main window.
+    static let mainWindowID = "main"
+
     @State private var settings = AppSettings()
     @State private var conversationStore = ConversationStore()
     @State private var fileSpaceStore = FileSpaceStore()
@@ -13,7 +17,7 @@ struct TySkaozApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: Self.mainWindowID) {
             ContentView()
                 .environment(settings)
                 .environment(conversationStore)
@@ -21,6 +25,9 @@ struct TySkaozApp: App {
                 .environment(memoryStore)
                 .environment(pluginStore)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
+        }
+        .commands {
+            AppCommands()
         }
 
         Settings {
