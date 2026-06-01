@@ -85,14 +85,39 @@ struct Indexer {
             seenIDs.insert(page.id)
         }
 
-        // Second pass: write to DB, then embed outside the write tx.
-        for (relativePath, page) in parsed {
-            let (outcome, embedTargets) = try await indexParsed(
-                page, relativePath: relativePath, titleToID: titleToID
-            )
+        // Second pass: pages + chunks for every parsed file, all inside
+        // one write tx so the edges insert (third pass below) sees a DB
+        // where every referenced target page already exists. Doing edges
+        // per-page would trip the `edges.dst_page_id → pages.id` FK as
+        // soon as a link points to a page later in the iteration order.
+        let outcomes: [String: IndexOutcome]
+        let embedTargets: [String: [EmbedTarget]]
+        (outcomes, embedTargets) = try await pool.write { db in
+            var outcomes: [String: IndexOutcome] = [:]
+            var targets: [String: [EmbedTarget]] = [:]
+            for (relativePath, page) in parsed {
+                let (outcome, chunkTargets) = try writePageAndChunks(
+                    db, page: page, relativePath: relativePath
+                )
+                outcomes[page.id] = outcome
+                if outcome != .unchanged {
+                    targets[page.id] = chunkTargets
+                }
+            }
+            // Edges as a final sub-pass — every page exists by now.
+            for (_, page) in parsed where outcomes[page.id] != .unchanged {
+                try writeEdges(db, page: page, titleToID: titleToID)
+            }
+            return (outcomes, targets)
+        }
+        for outcome in outcomes.values {
             report.record(outcome)
-            if !embedTargets.isEmpty {
-                try await embedAndStore(embedTargets)
+        }
+
+        // Embeddings outside the writer lock — network/model latency.
+        for (_, page) in parsed {
+            if let pageTargets = embedTargets[page.id], !pageTargets.isEmpty {
+                try await embedAndStore(pageTargets)
             }
         }
 
@@ -107,84 +132,85 @@ struct Indexer {
     /// write transaction has released the writer lock.
     private typealias EmbedTarget = (chunkID: Int64, text: String)
 
-    /// Indexes one parsed page. The `titleToID` map is used to resolve
-    /// `[[Title]]` wikilinks to `edges.dst_page_id` whenever the target
-    /// is known. Returns the outcome plus the chunks that now need
-    /// embeddings (empty when the page was unchanged).
-    private func indexParsed(
-        _ page: ParsedPage,
-        relativePath: String,
-        titleToID: [String: String]
-    ) async throws -> (IndexOutcome, [EmbedTarget]) {
-        try await pool.write { db -> (IndexOutcome, [EmbedTarget]) in
-            let existingHash = try String.fetchOne(
-                db,
-                sql: "SELECT content_hash FROM pages WHERE id = ?",
-                arguments: [page.id]
-            )
+    /// Pass 1 for a single page — upsert `pages` row, replace chunks.
+    /// Skips when the content hash matches what's already indexed.
+    /// Edges are intentionally NOT touched here; they run in pass 2
+    /// once every page is in the DB.
+    private func writePageAndChunks(
+        _ db: Database,
+        page: ParsedPage,
+        relativePath: String
+    ) throws -> (IndexOutcome, [EmbedTarget]) {
+        let existingHash = try String.fetchOne(
+            db,
+            sql: "SELECT content_hash FROM pages WHERE id = ?",
+            arguments: [page.id]
+        )
+        if existingHash == page.contentHash {
+            return (.unchanged, [])
+        }
 
-            if existingHash == page.contentHash {
-                return (.unchanged, [])
-            }
+        let outcome: IndexOutcome = existingHash == nil ? .added : .updated
+        let now = Date()
 
-            let outcome: IndexOutcome = existingHash == nil ? .added : .updated
-            let now = Date()
+        try db.execute(sql: """
+            INSERT INTO pages (id, path, title, type, summary,
+                               content_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                path = excluded.path,
+                title = excluded.title,
+                type = excluded.type,
+                content_hash = excluded.content_hash,
+                updated_at = excluded.updated_at;
+        """, arguments: [
+            page.id, relativePath, page.title, page.type,
+            page.contentHash, now, now
+        ])
 
-            // Upsert the page row. SQLite's `ON CONFLICT(id) DO UPDATE`
-            // keeps created_at on existing rows and refreshes the rest.
+        try db.execute(sql: "DELETE FROM chunks WHERE page_id = ?;",
+                       arguments: [page.id])
+        var chunkIDs: [Int64] = []
+        for chunk in page.chunks {
+            let headingPath = Self.encodeHeadingPath(chunk.headingPath)
             try db.execute(sql: """
-                INSERT INTO pages (id, path, title, type, summary,
-                                   content_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    path = excluded.path,
-                    title = excluded.title,
-                    type = excluded.type,
-                    content_hash = excluded.content_hash,
-                    updated_at = excluded.updated_at;
-            """, arguments: [
-                page.id, relativePath, page.title, page.type,
-                page.contentHash, now, now
-            ])
+                INSERT INTO chunks (page_id, ordinal, heading_path, text)
+                VALUES (?, ?, ?, ?);
+            """, arguments: [page.id, chunk.ordinal, headingPath, chunk.text])
+            chunkIDs.append(db.lastInsertedRowID)
+        }
 
-            // Chunks: wipe and replace (the page changed, ordinals shift
-            // anyway). Triggers handle fts_chunks + vec_chunks cleanup.
-            try db.execute(sql: "DELETE FROM chunks WHERE page_id = ?;",
-                           arguments: [page.id])
-            var chunkIDs: [Int64] = []
-            for chunk in page.chunks {
-                let headingPath = Self.encodeHeadingPath(chunk.headingPath)
-                try db.execute(sql: """
-                    INSERT INTO chunks (page_id, ordinal, heading_path, text)
-                    VALUES (?, ?, ?, ?);
-                """, arguments: [page.id, chunk.ordinal, headingPath, chunk.text])
-                chunkIDs.append(db.lastInsertedRowID)
+        let targets: [EmbedTarget] = zip(chunkIDs, page.chunks.map(\.text))
+            .map { EmbedTarget(chunkID: $0, text: $1) }
+        return (outcome, targets)
+    }
+
+    /// Pass 2: edges, resolved against the in-memory `titleToID` map and
+    /// the pages already written in pass 1. By the time this runs every
+    /// page exists in the DB, so the FK on `edges.dst_page_id` is happy.
+    private func writeEdges(
+        _ db: Database,
+        page: ParsedPage,
+        titleToID: [String: String]
+    ) throws {
+        try db.execute(sql: "DELETE FROM edges WHERE src_page_id = ?;",
+                       arguments: [page.id])
+        for link in page.wikilinks {
+            let resolvedID: String?
+            if try Bool.fetchOne(
+                db,
+                sql: "SELECT EXISTS(SELECT 1 FROM pages WHERE id = ?);",
+                arguments: [link.raw]
+            ) == true {
+                resolvedID = link.raw
+            } else {
+                resolvedID = titleToID[link.raw]
             }
-
-            // Embedding deferred until after the writer lock releases —
-            // network or model load latency shouldn't hold the writer.
-
-            // Edges: wipe and replace. Resolve dst via id-exact first,
-            // then title-exact via the in-memory map.
-            try db.execute(sql: "DELETE FROM edges WHERE src_page_id = ?;",
-                           arguments: [page.id])
-            for link in page.wikilinks {
-                let resolvedID: String?
-                if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM pages WHERE id = ?);", arguments: [link.raw]) == true {
-                    resolvedID = link.raw
-                } else {
-                    resolvedID = titleToID[link.raw]
-                }
-                try db.execute(sql: """
-                    INSERT OR IGNORE INTO edges
-                        (src_page_id, dst_page_id, dst_title_raw, rel_type)
-                    VALUES (?, ?, ?, 'link');
-                """, arguments: [page.id, resolvedID, link.raw])
-            }
-
-            let targets: [EmbedTarget] = zip(chunkIDs, page.chunks.map(\.text))
-                .map { EmbedTarget(chunkID: $0, text: $1) }
-            return (outcome, targets)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO edges
+                    (src_page_id, dst_page_id, dst_title_raw, rel_type)
+                VALUES (?, ?, ?, 'link');
+            """, arguments: [page.id, resolvedID, link.raw])
         }
     }
 
