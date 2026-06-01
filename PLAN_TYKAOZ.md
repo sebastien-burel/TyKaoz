@@ -1,7 +1,8 @@
 # PLAN_TYKAOZ.md
 
 > Plan de développement — app macOS native de chat LLM, privacy-first.
-> Stade : idée. Première cible : chat contre un serveur Ollama distant.
+> État au 2026-06-01 : phases 0-5 livrées (chat multi-provider, persistance,
+> outils externes, plugins). Prochaine cible : Phase 6 — RAG documentaire.
 > Ce plan avance **par paliers**. Chaque phase a des critères de succès
 > vérifiables (cf. CLAUDE.md, guideline 4). On ne passe à la phase suivante
 > qu'une fois les critères de la phase courante remplis.
@@ -23,15 +24,15 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 0 — Cadrage & squelette projet
+## Phase 0 — Cadrage & squelette projet — **livré**
 
 **But :** un projet qui compile, vide, avec la structure modulaire en place.
 
-- [ ] Projet Xcode SwiftUI, app macOS, cible Apple Silicon.
-- [ ] Arborescence modulaire : `App/`, `UI/` (les 3 panneaux), `Core/`
+- [x] Projet Xcode SwiftUI, app macOS, cible Apple Silicon.
+- [x] Arborescence modulaire : `App/`, `UI/` (les 3 panneaux), `Core/`
       (logique métier testable), `Providers/` (backends LLM), `Persistence/`.
-- [ ] CLAUDE.md à la racine. Git initialisé, premier commit.
-- [ ] Cible de tests XCTest qui tourne (même vide).
+- [x] CLAUDE.md à la racine. Git initialisé, premier commit.
+- [x] Cible de tests Swift Testing qui tourne (alignée Xcode 26).
 
 **Critères de succès :**
 - `xcodebuild` réussit ; l'app se lance sur une fenêtre vide.
@@ -39,16 +40,16 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 1 — Le shell UI (sans IA)
+## Phase 1 — Le shell UI (sans IA) — **livré**
 
 **But :** la coquille à trois panneaux, branchée sur des données factices.
 
-- [ ] Layout 3 panneaux : réglages (serveur + modèle), sidebar conversations,
+- [x] Layout 3 panneaux : réglages (serveur + modèle), sidebar conversations,
       panneau central de conversation.
-- [ ] Sidebar : liste de conversations *mockées*, sélection, nouvelle conv.
-- [ ] Panneau central : affichage de messages mockés (user / assistant),
+- [x] Sidebar : liste de conversations *mockées*, sélection, nouvelle conv.
+- [x] Panneau central : affichage de messages mockés (user / assistant),
       champ de saisie (pas encore connecté).
-- [ ] Tokens de marque appliqués (Ink/Slate/Tide, Fraunces/Inter Tight/Mono).
+- [x] Tokens de marque appliqués (Ink/Slate/Tide, Fraunces/Inter Tight/Mono).
 
 **Critères de succès :**
 - On navigue entre 2-3 conversations mockées ; le panneau central reflète
@@ -61,15 +62,15 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 2 — Réglages & connexion Ollama distant
+## Phase 2 — Réglages & connexion Ollama distant — **livré**
 
 **But :** configurer un serveur Ollama distant et lister ses modèles.
 
-- [ ] Écran réglages : URL du serveur Ollama (host:port), test de connexion.
-- [ ] Récupération de la liste des modèles disponibles (`/api/tags`).
-- [ ] Sélecteur de modèle alimenté par cette liste.
-- [ ] Persistance des réglages (URL, modèle choisi) sur disque.
-- [ ] Gestion d'erreur réseau réelle (serveur injoignable, timeout) —
+- [x] Écran réglages : URL du serveur Ollama (host:port), test de connexion.
+- [x] Récupération de la liste des modèles disponibles (`/api/tags`).
+- [x] Sélecteur de modèle alimenté par cette liste.
+- [x] Persistance des réglages (URL, modèle choisi) sur disque.
+- [x] Gestion d'erreur réseau réelle (serveur injoignable, timeout) —
       pas de gestion d'erreurs pour scénarios impossibles (CLAUDE.md §2).
 
 **Critères de succès :**
@@ -79,15 +80,15 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 3 — Chat réel avec streaming
+## Phase 3 — Chat réel avec streaming — **livré**
 
 **But :** une vraie conversation, tokens en flux, contre Ollama.
 
-- [ ] Envoi d'un message → appel `/api/chat` d'Ollama en streaming.
-- [ ] Affichage incrémental des tokens (`AsyncStream`).
-- [ ] Historique de conversation envoyé en contexte à chaque tour.
-- [ ] Indicateur d'état (génération en cours, stop).
-- [ ] Le `OllamaProvider` est isolé dans `Providers/` derrière une frontière
+- [x] Envoi d'un message → appel `/api/chat` d'Ollama en streaming.
+- [x] Affichage incrémental des tokens (`AsyncStream`).
+- [x] Historique de conversation envoyé en contexte à chaque tour.
+- [x] Indicateur d'état (génération en cours, stop).
+- [x] Le `OllamaProvider` est isolé dans `Providers/` derrière une frontière
       claire — **mais on n'écrit pas encore le protocole générique** (un seul
       backend ; on attend le 2e, cf. CLAUDE.md).
 
@@ -99,15 +100,16 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 4 — Persistance des conversations
+## Phase 4 — Persistance des conversations — **livré (sauf recherche)**
 
 **But :** les conversations survivent au redémarrage.
 
-- [ ] Sauvegarde locale des conversations (format simple : JSON sur disque,
-      ou SwiftData si justifié — décision à prendre au début de la phase).
-- [ ] Chargement au lancement, mise à jour à chaque message.
-- [ ] Renommer / supprimer une conversation.
-- [ ] Recherche plein-texte basique dans l'historique (optionnel cette phase).
+- [x] Sauvegarde locale des conversations (JSON sur disque, choix fait en
+      début de phase — SwiftData pas nécessaire à ce stade).
+- [x] Chargement au lancement, mise à jour à chaque message.
+- [x] Renommer / supprimer une conversation.
+- [ ] Recherche plein-texte basique dans l'historique (était optionnel ;
+      reporté tant qu'aucun usage réel ne l'a réclamé).
 
 **Critères de succès :**
 - Créer une conv, quitter, relancer → la conv et ses messages sont là.
@@ -119,23 +121,60 @@ La première milestone réellement testable commercialement est en Phase 6.
 
 ---
 
-## Phase 5 — 2e backend : naissance de l'abstraction provider
+## Phase 5 — 2e backend : naissance de l'abstraction provider — **livré, au-delà**
 
 **But :** ajouter un 2e backend, et **c'est seulement maintenant** qu'on conçoit
 le protocole `LLMProvider` — avec 2 cas réels sous les yeux, pas 1.
 
-- [ ] Choisir le 2e backend selon l'intérêt du moment (suggestions :
-      Claude/OpenAI = API distante + streaming SSE + tool use ; ou MLX local
-      = poids locaux + téléchargement). Chacun stresse l'abstraction différemment.
-- [ ] Extraire le protocole `LLMProvider` à partir d'Ollama + backend #2.
-- [ ] Refactor `OllamaProvider` pour s'y conformer (diff chirurgical).
-- [ ] UI de sélection du provider dans les réglages.
+- [x] 2e backend choisi : Mistral (cloud, SSE, OpenAI-compatible).
+- [x] Protocole `LLMProvider` extrait à partir d'Ollama + Mistral.
+- [x] `OllamaProvider` refactoré pour s'y conformer.
+- [x] UI de sélection du provider dans les réglages (sidebar à N providers).
 
 **Critères de succès :**
 - On bascule de provider dans les réglages, le chat fonctionne avec les deux.
 - Le protocole n'a pas de fuite spécifique à un provider (ex. pas de `pull`
   obligatoire imposé à Claude).
 - Tests : un provider mocké implémente le protocole et passe les tests de chat.
+
+**Au-delà du plan initial :** au lieu de s'arrêter à 2 providers, on en a
+ajouté 7 supplémentaires un par un en validant que le protocole tient :
+OpenAI, Anthropic, Google Gemini, DeepSeek, Apple Intelligence (Foundation
+Models, on-device), Qwen Cloud (DashScope), z.ai (Zhipu GLM). Un
+`OpenAICompatibleClient` partagé absorbe Mistral / OpenAI / DeepSeek /
+Qwen / z.ai ; Anthropic, Google et Apple ont leur client dédié.
+
+---
+
+## Livré hors séquence — Outils externes (function calling)
+
+Le plan initial plaçait les outils en *« Phases ultérieures »* après la RAG ;
+en pratique ils ont été construits avant, parce qu'ils débloquent une boucle
+agent-tools sur tous les providers et préparent le terrain RAG (un outil
+`search_docs` se branchera de la même façon).
+
+**Livré :**
+- Boucle de tool calling multi-tours côté `ChatSession` (StreamEvent, max 10
+  rounds, gestion d'erreurs comme `ToolResult` plutôt que throw).
+- Émission + consommation des tool calls sur les 9 providers (chacun a son
+  format : OpenAI-compatible `tool_calls`, Anthropic `content_block`,
+  Google `functionDeclarations`, Ollama, Foundation Models natifs).
+- 10 outils built-in : `current_datetime`, `current_location` (Core Location
+  + reverse-geocoding), `fetch_url`, `web_search` (Brave), `list_directory`,
+  `read_file`, `grep_files`, `save_memory`, `list_memories`, `read_memory`.
+- *File spaces* autorisés (sandbox-friendly, bookmarks app-scope) bornant
+  les outils fichiers.
+- *Mémoire long terme* injectée comme system prompt à la demande.
+- Système de **plugins HTTP** : drag-and-drop d'un manifeste JSON →
+  outil exposé au modèle, secrets stockés dans le trousseau, templating
+  d'URL/headers.
+- UI : cartes d'appels d'outils repliables, étapes intermédiaires
+  collapsées en fin de tour, toggles par outil dans les réglages,
+  liste opt-in séparée pour Apple Intelligence (contexte 4k oblige).
+
+**Reste à faire dans cette veine :** agents (boucles multi-étapes
+autonomes), outils plus riches (édition de fichiers, exécution shell
+encadrée, etc.) — non bloquants pour Phase 6.
 
 ---
 
@@ -161,10 +200,14 @@ répondre en citant les sources. C'est ici qu'on teste si quelqu'un paierait.
 
 ## Phases ultérieures (esquisse, à re-cadrer le moment venu)
 
-- **Outils externes** (function calling) — dépend des providers qui le supportent.
-- **Agents** (boucles multi-étapes outillées).
-- **Graph sur les conversations** (relations entre échanges/sujets).
-- **Autres backends** : Apple Intelligence, Mistral, etc., un par un.
+- **Agents** (boucles multi-étapes outillées, planification, retries).
+- **Graph sur les conversations** (relations entre échanges/sujets,
+  navigation par sujet plutôt que chronologique).
+- **Recherche plein-texte** dans l'historique (reporté de la Phase 4).
+- **iOS / iPadOS 26** : portage SwiftUI quand un besoin produit le justifie
+  (cf. CLAUDE.md — code gardé portable mais targets non créés).
+- **MLX local** : 11e backend possible, avec téléchargement des poids.
+  Stresse l'abstraction provider différemment (pas de réseau, pas de `list_models`).
 - **Packaging & distribution** : signature, notarisation, .dmg, compte
   développeur Apple, et seulement *si* le marché valide — RGPD/CNIL, CGU,
   modèle de prix. (Rappel : tout ce « reste » non-code est le vrai goulot pour
