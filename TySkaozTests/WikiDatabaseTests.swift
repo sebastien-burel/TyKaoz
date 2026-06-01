@@ -184,6 +184,195 @@ struct WikiDatabaseTests {
         #expect(title == "Keeper")
     }
 
+    /// 1000 vectors at random positions in 768-d. Query a vector that
+    /// matches one specific seed exactly; the matching chunk must come
+    /// back first. Also measures the end-to-end KNN latency so we have a
+    /// concrete number — anything past ~50 ms on M-series silicon is a
+    /// red flag worth investigating before scaling further.
+    @Test
+    func knnAtScale1000() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        let target = 137  // arbitrary "needle" seed
+        try await pool.write { db in
+            for i in 0..<1_000 {
+                let pageID = "p\(i)"
+                try db.execute(sql: """
+                    INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                    VALUES (?, ?, ?, 'h', datetime('now'), datetime('now'));
+                """, arguments: [pageID, "wiki/\(pageID).md", "Page \(i)"])
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES (?, 0, ?);
+                """, arguments: [pageID, "chunk text \(i)"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: i))])
+            }
+        }
+
+        let query = Self.unitVector(seed: target)
+        let start = Date()
+        let firstChunkID: Int64? = try await pool.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT chunk_id FROM vec_chunks
+                WHERE embedding MATCH ? ORDER BY distance LIMIT 1;
+            """, arguments: [Self.vectorBlob(query)])?["chunk_id"]
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        print("knnAtScale1000: KNN over 1000 vectors took \(String(format: "%.4f", elapsed))s")
+
+        // chunks.id is autoincrement starting at 1, target seed inserted
+        // at iteration index `target`, so chunkID = target + 1.
+        #expect(firstChunkID == Int64(target + 1))
+        #expect(elapsed < 0.5)  // generous; M-series should be sub-50ms
+    }
+
+    /// Multiple parallel reads while a writer is mid-transaction. The pool
+    /// must not deadlock and reads must see a consistent snapshot.
+    @Test
+    func concurrentReadsWhileWriting() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        // Seed with one page so reads have something to count.
+        try await pool.write { db in
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p0', 'wiki/p0.md', 'P0', 'h', datetime('now'), datetime('now'));
+            """)
+        }
+
+        try await withThrowingTaskGroup(of: Int.self) { group in
+            // One writer that adds 100 pages in a single transaction.
+            group.addTask {
+                try await pool.write { db in
+                    for i in 1...100 {
+                        try db.execute(sql: """
+                            INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                            VALUES (?, ?, ?, 'h', datetime('now'), datetime('now'));
+                        """, arguments: ["p\(i)", "wiki/p\(i).md", "P\(i)"])
+                    }
+                }
+                return -1
+            }
+            // 16 parallel readers, each counting pages.
+            for _ in 0..<16 {
+                group.addTask {
+                    try await pool.read { db in
+                        try Int.fetchOne(db, sql: "SELECT count(*) FROM pages;") ?? -1
+                    }
+                }
+            }
+
+            var counts: [Int] = []
+            for try await result in group {
+                counts.append(result)
+            }
+            // Reader snapshots must be 1 (pre-write commit) or 101 (post)
+            // — never partially-committed values like 47.
+            let readerCounts = counts.filter { $0 != -1 }
+            #expect(readerCounts.allSatisfy { $0 == 1 || $0 == 101 })
+        }
+
+        let finalCount = try await pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM pages;") ?? 0
+        }
+        #expect(finalCount == 101)
+    }
+
+    /// chunks_au_fts must fire on UPDATE: rewriting a chunk's text means
+    /// the old term stops matching and the new term starts matching.
+    @Test
+    func updateChunkRefreshesFTS() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        try await pool.write { db in
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p1', 'wiki/p1.md', 'P1', 'h', datetime('now'), datetime('now'));
+            """)
+            try db.execute(sql: """
+                INSERT INTO chunks (page_id, ordinal, text)
+                VALUES ('p1', 0, 'avant');
+            """)
+        }
+
+        // Sanity: 'avant' matches, 'après' doesn't.
+        let preHitAvant = try await pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'avant';") ?? 0
+        }
+        let preHitApres = try await pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'après';") ?? 0
+        }
+        #expect(preHitAvant == 1)
+        #expect(preHitApres == 0)
+
+        try await pool.write { db in
+            try db.execute(sql: "UPDATE chunks SET text = 'après' WHERE page_id = 'p1';")
+        }
+
+        let postHitAvant = try await pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'avant';") ?? 0
+        }
+        let postHitApres = try await pool.read { db in
+            try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'après';") ?? 0
+        }
+        #expect(postHitAvant == 0)
+        #expect(postHitApres == 1)
+    }
+
+    /// Deleting a page with 100 chunks must wipe chunks, vec_chunks
+    /// rows and fts_chunks entries — no orphans anywhere.
+    @Test
+    func bulkDeletionPropagatesEverywhere() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        try await pool.write { db in
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p1', 'wiki/p1.md', 'P1', 'h', datetime('now'), datetime('now'));
+            """)
+            for i in 0..<100 {
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES ('p1', ?, ?);
+                """, arguments: [i, "fragment \(i) du texte"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: i))])
+            }
+        }
+
+        // Sanity before deletion.
+        let preDelete: (Int, Int, Int) = try await pool.read { db in
+            let c = try Int.fetchOne(db, sql: "SELECT count(*) FROM chunks;") ?? 0
+            let v = try Int.fetchOne(db, sql: "SELECT count(*) FROM vec_chunks;") ?? 0
+            let f = try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'fragment';") ?? 0
+            return (c, v, f)
+        }
+        #expect(preDelete == (100, 100, 100))
+
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM pages WHERE id = 'p1';")
+        }
+
+        let postDelete: (Int, Int, Int) = try await pool.read { db in
+            let c = try Int.fetchOne(db, sql: "SELECT count(*) FROM chunks;") ?? -1
+            let v = try Int.fetchOne(db, sql: "SELECT count(*) FROM vec_chunks;") ?? -1
+            let f = try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'fragment';") ?? -1
+            return (c, v, f)
+        }
+        #expect(postDelete == (0, 0, 0))
+    }
+
     // MARK: - Helpers
 
     private static func makeTemporaryDatabaseURL() throws -> URL {
@@ -198,14 +387,16 @@ struct WikiDatabaseTests {
         values.withUnsafeBufferPointer { Data(buffer: $0) }
     }
 
-    /// Deterministic 768-dim "unit-ish" vector, seeded so different seeds
-    /// give clearly distinct vectors (each is dominated by a different
-    /// coordinate range).
+    /// Deterministic 768-dim vector with a per-seed unique pseudo-random
+    /// signature. LCG ensures collisions only at very large seed counts —
+    /// suitable for KNN ranking tests up to thousands of vectors.
     private static func unitVector(seed: Int) -> [Float] {
-        var v = [Float](repeating: 0.01, count: 768)
-        // Concentrate magnitude in a seed-specific 16-coord band.
-        let start = (seed * 16) % 768
-        for i in 0..<16 { v[start + i] = 1.0 }
+        var rng = UInt32(bitPattern: Int32(truncatingIfNeeded: seed &+ 1))
+        var v = [Float](repeating: 0, count: 768)
+        for i in 0..<768 {
+            rng = rng &* 1_664_525 &+ 1_013_904_223
+            v[i] = Float(rng & 0xFFFF) / Float(0xFFFF)
+        }
         return v
     }
 
