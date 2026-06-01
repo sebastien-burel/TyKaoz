@@ -10,7 +10,10 @@ import CSqliteVec
 /// indexer writes from a background queue while the UI / agent read in
 /// parallel. Migrations apply the v1 schema at open time.
 enum WikiDatabase {
-    static func open(at url: URL) throws -> DatabasePool {
+    static func open(
+        at url: URL,
+        embeddingDimension: Int = WikiSchemaV1.defaultEmbeddingDimension
+    ) throws -> DatabasePool {
         var config = Configuration()
         config.prepareDatabase { db in
             // Initialise sqlite-vec on every connection in the pool. Done
@@ -23,14 +26,14 @@ enum WikiDatabase {
             }
         }
         let pool = try DatabasePool(path: url.path, configuration: config)
-        try migrator.migrate(pool)
+        try migrator(embeddingDimension: embeddingDimension).migrate(pool)
         return pool
     }
 
-    private static var migrator: DatabaseMigrator {
+    private static func migrator(embeddingDimension: Int) -> DatabaseMigrator {
         var m = DatabaseMigrator()
         m.registerMigration("v1.initial-schema") { db in
-            try WikiSchemaV1.create(in: db)
+            try WikiSchemaV1.create(in: db, embeddingDimension: embeddingDimension)
         }
         return m
     }

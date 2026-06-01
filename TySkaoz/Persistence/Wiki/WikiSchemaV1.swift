@@ -4,12 +4,13 @@ import GRDB
 /// First migration — the schema defined in PLAN_TYKAOZ_WIKI.md.
 /// Markdown on disk stays canonical; this database is a derived index.
 enum WikiSchemaV1 {
-    /// Dimension of the embedding vectors. Locked once the column is
-    /// created; changing models requires a "rebuild vectoriel" migration
-    /// that drops and re-creates `vec_chunks` only.
-    static let embeddingDimension = 768
+    /// Default embedding dimension (nomic-embed-text). Locked once the
+    /// column is created; changing models with a different dim requires
+    /// the "rebuild vectoriel" migration that drops and re-creates
+    /// `vec_chunks` only.
+    static let defaultEmbeddingDimension = 768
 
-    static func create(in db: Database) throws {
+    static func create(in db: Database, embeddingDimension: Int = defaultEmbeddingDimension) throws {
         try db.execute(sql: """
             CREATE TABLE pages (
                 id           TEXT PRIMARY KEY,
@@ -51,6 +52,18 @@ enum WikiSchemaV1 {
                 embedding FLOAT[\(embeddingDimension)]
             );
         """)
+        // Persist the chosen dimension so future code paths (rebuild
+        // vectoriel, migrations) can read it back without re-parsing the
+        // vec0 declaration.
+        try db.execute(sql: """
+            CREATE TABLE wiki_meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+        """)
+        try db.execute(sql: """
+            INSERT INTO wiki_meta (key, value) VALUES ('embedding_dimension', ?);
+        """, arguments: [String(embeddingDimension)])
 
         try db.execute(sql: """
             CREATE VIRTUAL TABLE fts_chunks USING fts5(
