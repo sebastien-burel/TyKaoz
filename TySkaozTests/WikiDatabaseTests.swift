@@ -51,6 +51,139 @@ struct WikiDatabaseTests {
         #expect((neighbours.first?.distance ?? 1) < 0.001)
     }
 
+    /// 3 vectors at known cosine distances from the query — KNN must
+    /// return them in increasing distance order.
+    @Test
+    func knnRanksByDistance() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        // Three orthogonal-ish unit-ish vectors. We'll query close to v1.
+        let v1 = Self.unitVector(seed: 1)
+        let v2 = Self.unitVector(seed: 2)
+        let v3 = Self.unitVector(seed: 3)
+        let query = Self.blend(v1, with: v2, ratio: 0.95)  // very close to v1
+
+        try await pool.write { db in
+            for (i, vector) in [v1, v2, v3].enumerated() {
+                let pageID = "p\(i)"
+                try db.execute(sql: """
+                    INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                    VALUES (?, ?, ?, 'h', datetime('now'), datetime('now'));
+                """, arguments: [pageID, "wiki/\(pageID).md", "Page \(i)"])
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES (?, 0, ?);
+                """, arguments: [pageID, "chunk \(i)"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(vector)])
+            }
+        }
+
+        let ranked: [Int64] = try await pool.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT chunk_id FROM vec_chunks
+                WHERE embedding MATCH ?
+                ORDER BY distance LIMIT 3;
+            """, arguments: [Self.vectorBlob(query)])
+            .map { $0["chunk_id"] }
+        }
+
+        #expect(ranked.count == 3)
+        // First chunk (page p0, seed=1) must come back first since query
+        // is a 95% blend toward v1.
+        #expect(ranked.first == 1)
+    }
+
+    /// FTS5 contentless-backed virtual table must round-trip chunk text.
+    @Test
+    func fts5RoundTrip() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        try await pool.write { db in
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p1', 'wiki/p1.md', 'P1', 'h', datetime('now'), datetime('now'));
+            """)
+            try db.execute(sql: """
+                INSERT INTO chunks (page_id, ordinal, text) VALUES
+                    ('p1', 0, 'le wiki LLM est une mémoire long-terme'),
+                    ('p1', 1, 'le graphe relie les pages entre elles');
+            """)
+            // Triggers fill fts_chunks automatically on insert.
+        }
+
+        let hits: [Int64] = try await pool.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT rowid FROM fts_chunks WHERE fts_chunks MATCH 'mémoire';
+            """).map { $0["rowid"] }
+        }
+
+        #expect(hits == [1])
+    }
+
+    /// `ON DELETE CASCADE` on the chunks FK must propagate to vec_chunks
+    /// when the parent page is deleted.
+    @Test
+    func cascadeDeleteRemovesVectorRows() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        try await pool.write { db in
+            try db.execute(sql: "PRAGMA foreign_keys = ON;")
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p1', 'wiki/p1.md', 'P1', 'h', datetime('now'), datetime('now'));
+            """)
+            try db.execute(sql: """
+                INSERT INTO chunks (page_id, ordinal, text) VALUES ('p1', 0, 't');
+            """)
+            let chunkID = db.lastInsertedRowID
+            try db.execute(sql: """
+                INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+            """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: 1))])
+
+            try db.execute(sql: "DELETE FROM pages WHERE id = 'p1';")
+        }
+
+        try await pool.read { db in
+            let chunkCount = try Int.fetchOne(db, sql: "SELECT count(*) FROM chunks;") ?? -1
+            let vecCount = try Int.fetchOne(db, sql: "SELECT count(*) FROM vec_chunks;") ?? -1
+            #expect(chunkCount == 0)
+            #expect(vecCount == 0)
+        }
+    }
+
+    /// Reopening an existing database must replay nothing (migration
+    /// already applied) and keep the inserted data.
+    @Test
+    func reopensExistingDatabase() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        do {
+            let pool = try WikiDatabase.open(at: url)
+            try await pool.write { db in
+                try db.execute(sql: """
+                    INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                    VALUES ('keeper', 'wiki/k.md', 'Keeper', 'h', datetime('now'), datetime('now'));
+                """)
+            }
+        }
+
+        // New pool, same file: data and schema must still be there.
+        let pool = try WikiDatabase.open(at: url)
+        let title: String? = try await pool.read { db in
+            try String.fetchOne(db, sql: "SELECT title FROM pages WHERE id = 'keeper';")
+        }
+        #expect(title == "Keeper")
+    }
+
     // MARK: - Helpers
 
     private static func makeTemporaryDatabaseURL() throws -> URL {
@@ -63,5 +196,21 @@ struct WikiDatabaseTests {
     /// vec0 expects a contiguous little-endian Float32 blob.
     private static func vectorBlob(_ values: [Float]) -> Data {
         values.withUnsafeBufferPointer { Data(buffer: $0) }
+    }
+
+    /// Deterministic 768-dim "unit-ish" vector, seeded so different seeds
+    /// give clearly distinct vectors (each is dominated by a different
+    /// coordinate range).
+    private static func unitVector(seed: Int) -> [Float] {
+        var v = [Float](repeating: 0.01, count: 768)
+        // Concentrate magnitude in a seed-specific 16-coord band.
+        let start = (seed * 16) % 768
+        for i in 0..<16 { v[start + i] = 1.0 }
+        return v
+    }
+
+    /// Returns `ratio * a + (1 - ratio) * b`, dim-wise.
+    private static func blend(_ a: [Float], with b: [Float], ratio: Float) -> [Float] {
+        zip(a, b).map { ratio * $0 + (1 - ratio) * $1 }
     }
 }
