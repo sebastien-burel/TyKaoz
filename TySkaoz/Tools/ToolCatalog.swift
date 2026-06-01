@@ -18,7 +18,13 @@ enum ToolCatalog {
         "grep_files",
         "save_memory",
         "list_memories",
-        "read_memory"
+        "read_memory",
+        "search_wiki",
+        "read_page",
+        "list_sources",
+        "read_source",
+        "write_wiki_page",
+        "lint_wiki"
     ]
 
     /// Every built-in tool, bound to the current authorised folders, the
@@ -29,9 +35,10 @@ enum ToolCatalog {
     static func allTools(
         roots: [AuthorizedRoot],
         memory: MemoryStore,
-        braveAPIKey: String
+        braveAPIKey: String,
+        wikiContext: WikiContext? = nil
     ) -> [any Tool] {
-        [
+        var tools: [any Tool] = [
             CurrentDateTimeTool(),
             CurrentLocationTool(),
             FetchURLTool(),
@@ -43,6 +50,17 @@ enum ToolCatalog {
             ListMemoriesTool(store: memory),
             ReadMemoryTool(store: memory)
         ]
+        if let wikiContext {
+            tools.append(contentsOf: [
+                SearchWikiTool(context: wikiContext),
+                ReadPageTool(context: wikiContext),
+                ListSourcesTool(context: wikiContext),
+                ReadSourceTool(context: wikiContext),
+                WriteWikiPageTool(context: wikiContext),
+                LintWikiTool(context: wikiContext)
+            ] as [any Tool])
+        }
+        return tools
     }
 
     /// The tools the user has left enabled, ready to hand to a provider.
@@ -50,10 +68,16 @@ enum ToolCatalog {
     static func enabledTools(
         roots: [AuthorizedRoot],
         memory: MemoryStore,
-        settings: AppSettings
+        settings: AppSettings,
+        wikiContext: WikiContext? = nil
     ) -> [any Tool] {
-        allTools(roots: roots, memory: memory, braveAPIKey: settings.braveAPIKey)
-            .filter { settings.isToolEnabled($0.spec.name) }
+        allTools(
+            roots: roots,
+            memory: memory,
+            braveAPIKey: settings.braveAPIKey,
+            wikiContext: wikiContext
+        )
+        .filter { settings.isToolEnabled($0.spec.name) }
     }
 
     /// Short French label shown in the settings list.
@@ -69,6 +93,12 @@ enum ToolCatalog {
         case "save_memory":      return "Enregistrer en mémoire"
         case "list_memories":    return "Lister les mémoires"
         case "read_memory":      return "Lire une mémoire"
+        case "search_wiki":      return "Rechercher dans le wiki"
+        case "read_page":        return "Lire une page wiki"
+        case "list_sources":     return "Lister les sources"
+        case "read_source":      return "Lire une source"
+        case "write_wiki_page":  return "Écrire une page wiki"
+        case "lint_wiki":        return "Audit du wiki"
         default:                 return name
         }
     }

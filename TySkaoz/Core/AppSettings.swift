@@ -280,6 +280,29 @@ final class AppSettings {
         didSet { KeychainStore.set(braveAPIKey, account: KeychainAccounts.braveAPIKey) }
     }
 
+    // MARK: - Wiki LLM (Phase 7+)
+
+    /// Master switch — when false the 6 wiki tools aren't exposed to
+    /// any provider, the index DB stays untouched, no file-watcher.
+    var wikiEnabled: Bool {
+        didSet { defaults.set(wikiEnabled, forKey: Keys.wikiEnabled) }
+    }
+
+    /// Embedding model name used at the Ollama side (e.g. `bge-m3`,
+    /// `nomic-embed-text`). Locked to the dimension stamped in the DB
+    /// at first open — changing the dim mid-flight requires a
+    /// rebuild-vectoriel migration.
+    var wikiEmbeddingModelID: String {
+        didSet { defaults.set(wikiEmbeddingModelID, forKey: Keys.wikiEmbeddingModelID) }
+    }
+
+    /// Dimension of the embedding vectors. Set once at first DB
+    /// creation. Surface in settings so the user can pick the right
+    /// value for their chosen model (bge-m3 = 1024, nomic = 768).
+    var wikiEmbeddingDimension: Int {
+        didSet { defaults.set(wikiEmbeddingDimension, forKey: Keys.wikiEmbeddingDimension) }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -336,6 +359,10 @@ final class AppSettings {
         self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
         self.appleEnabledTools = Set(defaults.array(forKey: Keys.appleEnabledTools) as? [String] ?? [])
         self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
+        self.wikiEnabled = defaults.bool(forKey: Keys.wikiEnabled)
+        self.wikiEmbeddingModelID = defaults.string(forKey: Keys.wikiEmbeddingModelID) ?? "nomic-embed-text"
+        let storedDim = defaults.integer(forKey: Keys.wikiEmbeddingDimension)
+        self.wikiEmbeddingDimension = storedDim > 0 ? storedDim : 768
     }
 
     private enum Keys {
@@ -351,6 +378,9 @@ final class AppSettings {
         static let zaiModel = "zai.selectedModel"
         static let disabledTools = "tools.disabled"
         static let appleEnabledTools = "tools.apple.enabled"
+        static let wikiEnabled = "wiki.enabled"
+        static let wikiEmbeddingModelID = "wiki.embeddingModelID"
+        static let wikiEmbeddingDimension = "wiki.embeddingDimension"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"

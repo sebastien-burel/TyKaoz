@@ -6,6 +6,7 @@ struct ContentView: View {
     @Environment(FileSpaceStore.self) private var fileSpaces
     @Environment(MemoryStore.self) private var memory
     @Environment(PluginStore.self) private var plugins
+    @Environment(WikiManager.self) private var wiki
 
     @State private var selection: Conversation.ID?
 
@@ -24,7 +25,8 @@ struct ContentView: View {
         let builtins = ToolCatalog.allTools(
             roots: fileSpaces.authorizedRoots,
             memory: memory,
-            braveAPIKey: settings.braveAPIKey
+            braveAPIKey: settings.braveAPIKey,
+            wikiContext: wiki.state.context
         ).filter { isEnabled($0.spec.name) }
 
         let pluginTools = plugins.tools()

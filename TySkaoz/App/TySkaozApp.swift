@@ -11,6 +11,7 @@ struct TySkaozApp: App {
     @State private var fileSpaceStore = FileSpaceStore()
     @State private var memoryStore = MemoryStore()
     @State private var pluginStore = PluginStore()
+    @State private var wikiManager = WikiManager()
 
     init() {
         FontRegistration.registerBundledFonts()
@@ -24,7 +25,14 @@ struct TySkaozApp: App {
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
                 .environment(pluginStore)
+                .environment(wikiManager)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
+                .onAppear {
+                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                }
+                .onChange(of: settings.wikiEnabled) { _, _ in
+                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                }
         }
         .commands {
             AppCommands()
@@ -36,6 +44,7 @@ struct TySkaozApp: App {
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
                 .environment(pluginStore)
+                .environment(wikiManager)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
     }
