@@ -42,6 +42,7 @@ struct SettingsPanelView: View {
         case .fileSpaces:           FileSpacesSettingsView()
         case .memory:               MemorySettingsView()
         case .plugins:              PluginsSettingsView()
+        case .wiki:                 WikiSettingsView()
         }
     }
 }
@@ -54,6 +55,7 @@ enum SettingsSection: Hashable {
     case fileSpaces
     case memory
     case plugins
+    case wiki
 
     var title: String {
         switch self {
@@ -62,6 +64,7 @@ enum SettingsSection: Hashable {
         case .fileSpaces:       return "Dossiers autorisés"
         case .memory:           return "Mémoire"
         case .plugins:          return "Plugins"
+        case .wiki:             return "Wiki"
         }
     }
 }
@@ -86,6 +89,7 @@ private struct ProvidersSidebar: View {
                 toolRow(title: "Dossiers", systemImage: "folder", section: .fileSpaces)
                 toolRow(title: "Mémoire", systemImage: "brain", section: .memory)
                 toolRow(title: "Plugins", systemImage: "puzzlepiece.extension", section: .plugins)
+                toolRow(title: "Wiki", systemImage: "books.vertical", section: .wiki)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
