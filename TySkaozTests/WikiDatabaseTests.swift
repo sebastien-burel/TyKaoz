@@ -373,6 +373,168 @@ struct WikiDatabaseTests {
         #expect(postDelete == (0, 0, 0))
     }
 
+    /// KNN over 10k vectors. sqlite-vec is brute-force exact search, so
+    /// latency scales linearly with corpus size. Asserts a loose ceiling
+    /// (<2 s on a debug build) and prints the actual number so we know
+    /// when to start thinking about an ANN index.
+    @Test
+    func knnAtScale10000() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        let target = 7777
+        let insertStart = Date()
+        try await pool.write { db in
+            try db.execute(sql: "INSERT INTO pages (id, path, title, content_hash, created_at, updated_at) VALUES ('p', 'wiki/p.md', 'P', 'h', datetime('now'), datetime('now'));")
+            for i in 0..<10_000 {
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES ('p', ?, ?);
+                """, arguments: [i, "c\(i)"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: i))])
+            }
+        }
+        let insertElapsed = Date().timeIntervalSince(insertStart)
+        print("knnAtScale10000: inserted 10k chunks+vectors in \(String(format: "%.3f", insertElapsed))s (= \(Int(10_000 / insertElapsed)) rows/s)")
+
+        let query = Self.unitVector(seed: target)
+        let knnStart = Date()
+        let topChunkID: Int64? = try await pool.read { db in
+            try Row.fetchOne(db, sql: """
+                SELECT chunk_id FROM vec_chunks
+                WHERE embedding MATCH ? ORDER BY distance LIMIT 1;
+            """, arguments: [Self.vectorBlob(query)])?["chunk_id"]
+        }
+        let knnElapsed = Date().timeIntervalSince(knnStart)
+        print("knnAtScale10000: KNN over 10k vectors in \(String(format: "%.4f", knnElapsed))s")
+
+        #expect(topChunkID == Int64(target + 1))
+        #expect(knnElapsed < 2.0)
+    }
+
+    /// Recursive CTE on `edges` — the actual graph-expansion query the
+    /// Phase 3 finder will use. Seeds with 1000 pages randomly linked
+    /// (avg ~5 outbound per page); verifies 1-hop and 2-hop reachable
+    /// counts and prints latency.
+    @Test
+    func graphTraversalAt1000Pages() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        var rng = Self.SeededRNG(seed: 42)
+        try await pool.write { db in
+            for i in 0..<1_000 {
+                try db.execute(sql: """
+                    INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                    VALUES (?, ?, ?, 'h', datetime('now'), datetime('now'));
+                """, arguments: ["p\(i)", "wiki/p\(i).md", "P\(i)"])
+            }
+            // ~5 outbound edges per page, all resolving (dst_page_id set).
+            for i in 0..<1_000 {
+                for _ in 0..<5 {
+                    let target = rng.next(upperBound: 1_000)
+                    if target == i { continue }
+                    let dst = "p\(target)"
+                    try db.execute(sql: """
+                        INSERT OR IGNORE INTO edges (src_page_id, dst_page_id, dst_title_raw, rel_type)
+                        VALUES (?, ?, ?, 'link');
+                    """, arguments: ["p\(i)", dst, "P\(target)"])
+                }
+            }
+        }
+
+        // 2-hop reachable set from p0, bidirectional (incoming + outgoing
+        // edges count for hopping — that's the algorithm sketched in
+        // PLAN_TYKAOZ_WIKI.md Phase 3).
+        let cte = """
+            WITH RECURSIVE reachable(page_id, depth) AS (
+              SELECT 'p0', 0
+              UNION
+              SELECT CASE WHEN e.src_page_id = r.page_id THEN e.dst_page_id
+                          ELSE e.src_page_id END, r.depth + 1
+              FROM edges e JOIN reachable r
+                ON (e.src_page_id = r.page_id OR e.dst_page_id = r.page_id)
+              WHERE r.depth < 2 AND e.dst_page_id IS NOT NULL
+            )
+            SELECT count(DISTINCT page_id) FROM reachable;
+        """
+        let start = Date()
+        let count = try await pool.read { db in
+            try Int.fetchOne(db, sql: cte) ?? -1
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        print("graphTraversalAt1000Pages: 2-hop CTE from p0 found \(count) pages in \(String(format: "%.4f", elapsed))s")
+
+        // Loose sanity: at 5 outbound × 1000 pages we expect the 2-hop
+        // neighbourhood of any seed to be tens to low hundreds — not 1
+        // (seed itself), not the entire graph.
+        #expect(count > 5)
+        #expect(count < 1_000)
+        #expect(elapsed < 0.5)
+    }
+
+    /// Characterises the cost of re-indexing a single page: delete the
+    /// existing chunks, re-insert with fresh embeddings, ensure FTS and
+    /// vector tables follow. Phase 1's indexer will hammer this path.
+    @Test
+    func reindexOnePageAt100Chunks() async throws {
+        let url = try Self.makeTemporaryDatabaseURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let pool = try WikiDatabase.open(at: url)
+
+        // Seed page with 100 chunks.
+        try await pool.write { db in
+            try db.execute(sql: """
+                INSERT INTO pages (id, path, title, content_hash, created_at, updated_at)
+                VALUES ('p1', 'wiki/p1.md', 'P1', 'h', datetime('now'), datetime('now'));
+            """)
+            for i in 0..<100 {
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES ('p1', ?, ?);
+                """, arguments: [i, "version1 chunk \(i)"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: i))])
+            }
+        }
+
+        // Re-index: wipe chunks for this page, re-insert with fresh content
+        // and fresh embeddings. Triggers handle vec_chunks + fts_chunks.
+        let start = Date()
+        try await pool.write { db in
+            try db.execute(sql: "DELETE FROM chunks WHERE page_id = 'p1';")
+            for i in 0..<100 {
+                try db.execute(sql: """
+                    INSERT INTO chunks (page_id, ordinal, text) VALUES ('p1', ?, ?);
+                """, arguments: [i, "version2 chunk \(i)"])
+                let chunkID = db.lastInsertedRowID
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?);
+                """, arguments: [chunkID, Self.vectorBlob(Self.unitVector(seed: i + 10_000))])
+            }
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        print("reindexOnePageAt100Chunks: reindexed 100 chunks in \(String(format: "%.4f", elapsed))s")
+
+        // Verify the rewrite happened: old term no longer matches, new
+        // does, and vec_chunks count is back to 100.
+        let counts: (oldHits: Int, newHits: Int, vec: Int) = try await pool.read { db in
+            let oldHits = try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'version1';") ?? -1
+            let newHits = try Int.fetchOne(db, sql: "SELECT count(*) FROM fts_chunks WHERE fts_chunks MATCH 'version2';") ?? -1
+            let vec = try Int.fetchOne(db, sql: "SELECT count(*) FROM vec_chunks;") ?? -1
+            return (oldHits, newHits, vec)
+        }
+        #expect(counts.oldHits == 0)
+        #expect(counts.newHits == 100)
+        #expect(counts.vec == 100)
+        #expect(elapsed < 1.0)
+    }
+
     // MARK: - Helpers
 
     private static func makeTemporaryDatabaseURL() throws -> URL {
@@ -403,5 +565,16 @@ struct WikiDatabaseTests {
     /// Returns `ratio * a + (1 - ratio) * b`, dim-wise.
     private static func blend(_ a: [Float], with b: [Float], ratio: Float) -> [Float] {
         zip(a, b).map { ratio * $0 + (1 - ratio) * $1 }
+    }
+
+    /// Numerical Recipes LCG. Deterministic per-seed, sufficient for
+    /// shuffling test fixtures without a Foundation dependency.
+    private struct SeededRNG {
+        private var state: UInt32
+        init(seed: Int) { state = UInt32(bitPattern: Int32(truncatingIfNeeded: seed &+ 1)) }
+        mutating func next(upperBound: Int) -> Int {
+            state = state &* 1_664_525 &+ 1_013_904_223
+            return Int(state) % upperBound
+        }
     }
 }
