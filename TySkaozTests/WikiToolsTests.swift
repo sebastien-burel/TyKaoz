@@ -58,12 +58,13 @@ struct WikiToolsTests {
         return (context, tempDir)
     }
 
-    private static func write(in wiki: URL, _ name: String, _ content: String) throws {
-        try content.write(
-            to: wiki.appendingPathComponent(name),
-            atomically: true,
-            encoding: .utf8
+    static func write(in dir: URL, _ name: String, _ content: String) throws {
+        let url = dir.appendingPathComponent(name)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
         )
+        try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     // MARK: - SearchWikiTool
@@ -150,6 +151,114 @@ struct WikiToolsTests {
 
         let tool = ReadPageTool(context: ctx)
         let args = try JSONSerialization.data(withJSONObject: ["id": "no-such-page"])
+        await #expect(throws: ToolError.self) {
+            _ = try await tool.execute(arguments: args)
+        }
+    }
+
+    // MARK: - ListSourcesTool
+
+    @Test
+    func listSourcesEnumeratesRawFiles() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Self.write(in: ctx.rawRoot, "conversations/abc.md", "# Conv 1\n\nHello.")
+        try Self.write(in: ctx.rawRoot, "docs/note.txt", "Just a note.")
+
+        let tool = ListSourcesTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+        let out = try await tool.execute(arguments: args)
+        #expect(out.contains("conversations/abc"))
+        #expect(out.contains("docs/note"))
+        #expect(out.contains("md"))
+        #expect(out.contains("txt"))
+    }
+
+    @Test
+    func listSourcesFiltersByKind() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Self.write(in: ctx.rawRoot, "a.md", "md")
+        try Self.write(in: ctx.rawRoot, "b.txt", "txt")
+
+        let tool = ListSourcesTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: ["kind": "txt"])
+        let out = try await tool.execute(arguments: args)
+        #expect(out.contains("b"))
+        #expect(!out.contains("a (md"))
+    }
+
+    @Test
+    func listSourcesReportsEmptyWhenRawMissing() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WikiToolsTests-empty-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let storeRoot = tempDir.appendingPathComponent("wiki-store", isDirectory: true)
+        try FileManager.default.createDirectory(at: storeRoot, withIntermediateDirectories: true)
+        let pool = try WikiDatabase.open(
+            at: storeRoot.appendingPathComponent("index.sqlite"),
+            embeddingDimension: 64
+        )
+        let ctx = WikiContext(storeRoot: storeRoot, pool: pool, embedder: nil)
+        // Deliberately skip bootstrapDirectoriesIfNeeded() — raw/ doesn't exist.
+
+        let tool = ListSourcesTool(context: ctx)
+        let out = try await tool.execute(arguments: Data("{}".utf8))
+        #expect(out.contains("n'existe pas"))
+    }
+
+    // MARK: - ReadSourceTool
+
+    @Test
+    func readSourceReturnsContent() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Self.write(in: ctx.rawRoot, "conversations/2026-06-01.md",
+                       "# Conversation\n\nUser: bonjour")
+
+        let tool = ReadSourceTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: ["id": "conversations/2026-06-01"])
+        let out = try await tool.execute(arguments: args)
+        #expect(out.contains("Conversation"))
+        #expect(out.contains("bonjour"))
+        #expect(out.contains("--- source: conversations/2026-06-01.md"))
+    }
+
+    @Test
+    func readSourceRejectsBinaryKind() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Self.write(in: ctx.rawRoot, "doc.pdf", "%PDF-1.4 fake")
+
+        let tool = ReadSourceTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "id": "doc", "kind": "pdf"
+        ])
+        await #expect(throws: ToolError.self) {
+            _ = try await tool.execute(arguments: args)
+        }
+    }
+
+    @Test
+    func readSourceRejectsPathEscape() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = ReadSourceTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: ["id": "../wiki/ollama"])
+        await #expect(throws: ToolError.self) {
+            _ = try await tool.execute(arguments: args)
+        }
+    }
+
+    @Test
+    func readSourceMissingThrows() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = ReadSourceTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: ["id": "nope"])
         await #expect(throws: ToolError.self) {
             _ = try await tool.execute(arguments: args)
         }
