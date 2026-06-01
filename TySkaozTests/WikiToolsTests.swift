@@ -264,6 +264,134 @@ struct WikiToolsTests {
         }
     }
 
+    // MARK: - WriteWikiPageTool
+
+    @Test
+    func writeCreatesNewPage() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = WriteWikiPageTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "notes/new.md",
+            "content": "---\nid: new\ntitle: New\n---\n\n# New\n\nFresh content."
+        ])
+        let out = try await tool.execute(arguments: args)
+        #expect(out.contains("Écrit notes/new.md"))
+        #expect(out.contains("hash:"))
+
+        // File is on disk.
+        let url = ctx.wikiRoot.appendingPathComponent("notes/new.md")
+        #expect(FileManager.default.fileExists(atPath: url.path))
+
+        // And indexed.
+        let exists = try await ctx.pool.read { db in
+            try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM pages WHERE id = 'new');") ?? false
+        }
+        #expect(exists == true)
+    }
+
+    @Test
+    func writeRejectsBadPath() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = WriteWikiPageTool(context: ctx)
+        for badPath in ["../escape.md", "/abs/path.md", "no-extension", "notes/file.txt"] {
+            let args = try JSONSerialization.data(withJSONObject: [
+                "path": badPath, "content": "x"
+            ])
+            await #expect(throws: ToolError.self) {
+                _ = try await tool.execute(arguments: args)
+            }
+        }
+    }
+
+    @Test
+    func writeDetectsStaleHash() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = WriteWikiPageTool(context: ctx)
+        // Overwriting an existing page (kayak) with a wrong expected_hash.
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "kayak.md",
+            "content": "---\nid: kayak\ntitle: Kayak\n---\nNew content.",
+            "expected_hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        ])
+        await #expect(throws: ToolError.self) {
+            _ = try await tool.execute(arguments: args)
+        }
+
+        // File on disk unchanged (still mentions "pagaie" from the fixture).
+        let url = ctx.wikiRoot.appendingPathComponent("kayak.md")
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk.contains("pagaie"))
+    }
+
+    @Test
+    func writeAcceptsCorrectExpectedHash() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Read current hash from disk.
+        let url = ctx.wikiRoot.appendingPathComponent("kayak.md")
+        let current = try String(contentsOf: url, encoding: .utf8)
+        let hash = HashStore.sha256(current)
+
+        let tool = WriteWikiPageTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "kayak.md",
+            "content": "---\nid: kayak\ntitle: Kayak\n---\nv2",
+            "expected_hash": hash
+        ])
+        _ = try await tool.execute(arguments: args)
+
+        let after = try String(contentsOf: url, encoding: .utf8)
+        #expect(after.contains("v2"))
+    }
+
+    @Test
+    func writeNormalizesWikilinks() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Fixture has a page titled "Ollama" with id "ollama".
+        let tool = WriteWikiPageTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "notes/related.md",
+            "content": "---\nid: related\ntitle: Related\n---\n\nVoir [[Ollama]] et [[Inconnue]]."
+        ])
+        _ = try await tool.execute(arguments: args)
+
+        let onDisk = try String(
+            contentsOf: ctx.wikiRoot.appendingPathComponent("notes/related.md"),
+            encoding: .utf8
+        )
+        #expect(onDisk.contains("[[ollama|Ollama]]"))
+        #expect(onDisk.contains("[[Inconnue]]"))  // unresolved, stays bare
+    }
+
+    @Test
+    func writeReportsGitStatus() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = WriteWikiPageTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "notes/git-check.md",
+            "content": "---\nid: git\ntitle: Git\n---\n\nbody"
+        ])
+        let out = try await tool.execute(arguments: args)
+        // The test bundle inherits the app's sandbox, which blocks
+        // launching /usr/bin/git from inside the container — so the
+        // tool reports "indisponible" but still writes the file. The
+        // contract is that the audit log is best-effort, never
+        // load-bearing for the write itself.
+        #expect(out.contains("git:"))
+        #expect(out.contains("Écrit"))
+    }
+
     @Test
     func readPageRequiresIdOrTitle() async throws {
         let (ctx, tempDir) = try await Self.makeContext()
