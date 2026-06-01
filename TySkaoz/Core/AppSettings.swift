@@ -266,6 +266,15 @@ final class AppSettings {
         didSet { defaults.set(Array(disabledTools), forKey: Keys.disabledTools) }
     }
 
+    /// Tools the user has explicitly enabled for Apple Intelligence. Stored
+    /// as the *enabled* set (the opposite of `disabledTools`) because the
+    /// on-device model's 4k-token context fills up fast — defaulting to none
+    /// keeps the provider usable for plain chat until the user opts in to
+    /// specific tools.
+    var appleEnabledTools: Set<String> = [] {
+        didSet { defaults.set(Array(appleEnabledTools), forKey: Keys.appleEnabledTools) }
+    }
+
     /// Brave Search API subscription token, backing the `web_search` tool.
     var braveAPIKey: String {
         didSet { KeychainStore.set(braveAPIKey, account: KeychainAccounts.braveAPIKey) }
@@ -277,6 +286,14 @@ final class AppSettings {
 
     func setToolEnabled(_ enabled: Bool, name: String) {
         if enabled { disabledTools.remove(name) } else { disabledTools.insert(name) }
+    }
+
+    func isAppleToolEnabled(_ name: String) -> Bool {
+        appleEnabledTools.contains(name)
+    }
+
+    func setAppleToolEnabled(_ enabled: Bool, name: String) {
+        if enabled { appleEnabledTools.insert(name) } else { appleEnabledTools.remove(name) }
     }
 
     // MARK: - Init
@@ -317,6 +334,7 @@ final class AppSettings {
         self.enabledQwenModels = Set(defaults.array(forKey: Keys.enabledModels(for: .qwen)) as? [String] ?? [])
         self.enabledZAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .zai)) as? [String] ?? [])
         self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
+        self.appleEnabledTools = Set(defaults.array(forKey: Keys.appleEnabledTools) as? [String] ?? [])
         self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
     }
 
@@ -332,6 +350,7 @@ final class AppSettings {
         static let qwenModel = "qwen.selectedModel"
         static let zaiModel = "zai.selectedModel"
         static let disabledTools = "tools.disabled"
+        static let appleEnabledTools = "tools.apple.enabled"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"

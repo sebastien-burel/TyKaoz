@@ -11,14 +11,25 @@ struct ContentView: View {
 
     /// Built fresh each render so newly-authorised folders, tool toggles and
     /// installed plugins flow into the live registry without restarting.
+    ///
+    /// Apple Intelligence uses a separate, opt-in tool set because the
+    /// on-device model's tiny context window fills up fast with tool schemas.
+    /// Everywhere else the global on/off applies.
     private var toolRegistry: ToolRegistry {
-        let builtins = ToolCatalog.enabledTools(
+        let isApple = settings.selectedProviderID == "apple"
+        let isEnabled: (String) -> Bool = { name in
+            isApple ? settings.isAppleToolEnabled(name) : settings.isToolEnabled(name)
+        }
+
+        let builtins = ToolCatalog.allTools(
             roots: fileSpaces.authorizedRoots,
             memory: memory,
-            settings: settings
-        )
+            braveAPIKey: settings.braveAPIKey
+        ).filter { isEnabled($0.spec.name) }
+
         let pluginTools = plugins.tools()
-            .filter { settings.isToolEnabled($0.spec.name) }
+            .filter { isEnabled($0.spec.name) }
+
         return ToolRegistry(tools: builtins + pluginTools)
     }
 
