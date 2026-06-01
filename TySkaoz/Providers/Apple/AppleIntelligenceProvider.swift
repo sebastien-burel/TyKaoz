@@ -146,10 +146,15 @@ struct AppleIntelligenceProvider: LLMProvider {
 
     /// Foundation Models surfaces opaque `error -1` descriptions; pull the
     /// human-readable parts so the failure banner says something actionable.
+    /// `errorDescription` and `failureReason` often carry the same string
+    /// (e.g. "Exceeded model context window size" appears on both), so we
+    /// dedupe while preserving order to avoid showing it twice.
     private static func describe(_ error: LanguageModelSession.GenerationError) -> String {
-        let parts = [error.errorDescription, error.failureReason, error.recoverySuggestion]
+        let candidates = [error.errorDescription, error.failureReason, error.recoverySuggestion]
             .compactMap { $0 }
             .filter { !$0.isEmpty }
+        var seen: Set<String> = []
+        let parts = candidates.filter { seen.insert($0).inserted }
         return parts.isEmpty ? String(describing: error) : parts.joined(separator: " ")
     }
 
