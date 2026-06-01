@@ -179,6 +179,58 @@ struct IndexerTests {
     }
 
     @Test
+    func embeddingProviderPopulatesVecChunks() async throws {
+        let f = try Self.makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.tempDir) }
+
+        try Self.writePage("p.md", content: """
+        ---
+        id: p
+        title: P
+        ---
+
+        # H1
+
+        Paragraphe 1.
+
+        # H2
+
+        Paragraphe 2.
+        """, in: f.wiki)
+
+        let embedder = FakeEmbeddingProvider(dimension: 768)
+        let indexer = Indexer(wikiRoot: f.wiki, pool: f.db, embedder: embedder)
+        let report = try await indexer.reindexAll()
+        #expect(report.added == 1)
+
+        let counts: (chunks: Int, vec: Int) = try await f.db.read { db in
+            let c = try Int.fetchOne(db, sql: "SELECT count(*) FROM chunks;") ?? -1
+            let v = try Int.fetchOne(db, sql: "SELECT count(*) FROM vec_chunks;") ?? -1
+            return (c, v)
+        }
+        // Two top-level headings → two chunks → two vectors.
+        #expect(counts.chunks == 2)
+        #expect(counts.vec == 2)
+        #expect(embedder.callCount == 1)  // one batched call
+    }
+
+    @Test
+    func embedderDimensionMismatchSurfacesAsError() async throws {
+        let f = try Self.makeFixture()
+        defer { try? FileManager.default.removeItem(at: f.tempDir) }
+
+        try Self.writePage("p.md", content: "# H\n\ntext", in: f.wiki)
+
+        // Embedder declares 768 but actually returns 256-d vectors.
+        let embedder = FakeEmbeddingProvider(dimension: 768, actualDimension: 256)
+        let indexer = Indexer(wikiRoot: f.wiki, pool: f.db, embedder: embedder)
+
+        await #expect(throws: IndexerError.self) {
+            _ = try await indexer.reindexAll()
+        }
+    }
+
+    @Test
     func walksNestedSubdirectories() async throws {
         let f = try Self.makeFixture()
         defer { try? FileManager.default.removeItem(at: f.tempDir) }

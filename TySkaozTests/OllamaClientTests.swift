@@ -7,6 +7,51 @@ struct OllamaClientTests {
     private let baseURL = URL(string: "http://localhost:11434")!
 
     @Test
+    func embedDecodesBatchedResponse() async throws {
+        let json = """
+        {
+          "model": "nomic-embed-text",
+          "embeddings": [
+            [0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6]
+          ]
+        }
+        """.data(using: .utf8)!
+        let session = MockURLProtocol.session(data: json, status: 200)
+        let client = OllamaClient(baseURL: baseURL, session: session)
+
+        let vectors = try await client.embed(
+            model: "nomic-embed-text",
+            inputs: ["hello", "world"]
+        )
+        #expect(vectors.count == 2)
+        #expect(vectors[0] == [0.1, 0.2, 0.3])
+        #expect(vectors[1] == [0.4, 0.5, 0.6])
+    }
+
+    @Test
+    func embedEmptyInputsShortCircuits() async throws {
+        // Should not even hit the network. Using a 500 responder to
+        // make sure an early return is what's happening.
+        let session = MockURLProtocol.session(data: Data(), status: 500)
+        let client = OllamaClient(baseURL: baseURL, session: session)
+        let vectors = try await client.embed(model: "any", inputs: [])
+        #expect(vectors.isEmpty)
+    }
+
+    @Test
+    func embedSurfaces5xxAsHTTPError() async {
+        let session = MockURLProtocol.session(
+            data: "model not found".data(using: .utf8)!,
+            status: 404
+        )
+        let client = OllamaClient(baseURL: baseURL, session: session)
+        await #expect(throws: OllamaClientError.self) {
+            _ = try await client.embed(model: "missing", inputs: ["x"])
+        }
+    }
+
+    @Test
     func decodesTagsResponse() async throws {
         let json = """
         {

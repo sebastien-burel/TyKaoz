@@ -1,6 +1,20 @@
 import Foundation
 import GRDB
 
+enum IndexerError: Error, LocalizedError, Equatable {
+    case embeddingCountMismatch(expected: Int, got: Int)
+    case embeddingDimensionMismatch(expected: Int, got: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .embeddingCountMismatch(let e, let g):
+            return "Embedder a renvoyé \(g) vecteurs pour \(e) chunks."
+        case .embeddingDimensionMismatch(let e, let g):
+            return "Vecteur de dimension \(g), attendu \(e) (cf. WikiSchemaV1)."
+        }
+    }
+}
+
 /// Result of indexing a single page.
 enum IndexOutcome: Hashable {
     case added
@@ -71,10 +85,15 @@ struct Indexer {
             seenIDs.insert(page.id)
         }
 
-        // Second pass: write to DB.
+        // Second pass: write to DB, then embed outside the write tx.
         for (relativePath, page) in parsed {
-            let outcome = try await indexParsed(page, relativePath: relativePath, titleToID: titleToID)
+            let (outcome, embedTargets) = try await indexParsed(
+                page, relativePath: relativePath, titleToID: titleToID
+            )
             report.record(outcome)
+            if !embedTargets.isEmpty {
+                try await embedAndStore(embedTargets)
+            }
         }
 
         // Reconcile: anything in DB that's no longer on disk gets cascaded.
@@ -84,15 +103,20 @@ struct Indexer {
         return report
     }
 
+    /// Pairs of (chunkID, text) the caller still needs to embed once the
+    /// write transaction has released the writer lock.
+    private typealias EmbedTarget = (chunkID: Int64, text: String)
+
     /// Indexes one parsed page. The `titleToID` map is used to resolve
     /// `[[Title]]` wikilinks to `edges.dst_page_id` whenever the target
-    /// is known.
+    /// is known. Returns the outcome plus the chunks that now need
+    /// embeddings (empty when the page was unchanged).
     private func indexParsed(
         _ page: ParsedPage,
         relativePath: String,
         titleToID: [String: String]
-    ) async throws -> IndexOutcome {
-        try await pool.write { db in
+    ) async throws -> (IndexOutcome, [EmbedTarget]) {
+        try await pool.write { db -> (IndexOutcome, [EmbedTarget]) in
             let existingHash = try String.fetchOne(
                 db,
                 sql: "SELECT content_hash FROM pages WHERE id = ?",
@@ -100,7 +124,7 @@ struct Indexer {
             )
 
             if existingHash == page.contentHash {
-                return .unchanged
+                return (.unchanged, [])
             }
 
             let outcome: IndexOutcome = existingHash == nil ? .added : .updated
@@ -127,13 +151,18 @@ struct Indexer {
             // anyway). Triggers handle fts_chunks + vec_chunks cleanup.
             try db.execute(sql: "DELETE FROM chunks WHERE page_id = ?;",
                            arguments: [page.id])
+            var chunkIDs: [Int64] = []
             for chunk in page.chunks {
                 let headingPath = Self.encodeHeadingPath(chunk.headingPath)
                 try db.execute(sql: """
                     INSERT INTO chunks (page_id, ordinal, heading_path, text)
                     VALUES (?, ?, ?, ?);
                 """, arguments: [page.id, chunk.ordinal, headingPath, chunk.text])
+                chunkIDs.append(db.lastInsertedRowID)
             }
+
+            // Embedding deferred until after the writer lock releases —
+            // network or model load latency shouldn't hold the writer.
 
             // Edges: wipe and replace. Resolve dst via id-exact first,
             // then title-exact via the in-memory map.
@@ -153,7 +182,38 @@ struct Indexer {
                 """, arguments: [page.id, resolvedID, link.raw])
             }
 
-            return outcome
+            let targets: [EmbedTarget] = zip(chunkIDs, page.chunks.map(\.text))
+                .map { EmbedTarget(chunkID: $0, text: $1) }
+            return (outcome, targets)
+        }
+    }
+
+    /// Embeds the given chunks in one batch and writes them to
+    /// `vec_chunks`. A no-op when no embedder is configured — Phase 1
+    /// still keeps chunks + FTS in sync, vector search just stays empty
+    /// until Phase 5 plugs Ollama in.
+    private func embedAndStore(_ targets: [EmbedTarget]) async throws {
+        guard let embedder else { return }
+        let vectors = try await embedder.embed(targets.map(\.text))
+        guard vectors.count == targets.count else {
+            throw IndexerError.embeddingCountMismatch(
+                expected: targets.count, got: vectors.count
+            )
+        }
+
+        try await pool.write { db in
+            for (target, vector) in zip(targets, vectors) {
+                guard vector.count == embedder.dimension else {
+                    throw IndexerError.embeddingDimensionMismatch(
+                        expected: embedder.dimension, got: vector.count
+                    )
+                }
+                let blob = vector.withUnsafeBufferPointer { Data(buffer: $0) }
+                try db.execute(sql: """
+                    INSERT INTO vec_chunks (chunk_id, embedding)
+                    VALUES (?, ?);
+                """, arguments: [target.chunkID, blob])
+            }
         }
     }
 

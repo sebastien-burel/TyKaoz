@@ -59,6 +59,54 @@ struct OllamaClient {
         }
     }
 
+    // MARK: - Embeddings
+
+    /// Batched call to `/api/embed`. The newer endpoint takes
+    /// `input: [String]` and returns `embeddings: [[Float]]` in the same
+    /// order — the indexer hits this once per page (one batch per chunk
+    /// set) so latency amortises across chunks of a single document.
+    func embed(model: String, inputs: [String]) async throws -> [[Float]] {
+        guard !inputs.isEmpty else { return [] }
+
+        let url = baseURL.appending(path: "/api/embed")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 60
+
+        let body: [String: Any] = ["model": model, "input": inputs]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw OllamaClientError.network(message: urlError.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw OllamaClientError.network(message: "réponse non-HTTP")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let trimmed = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw OllamaClientError.http(
+                status: http.statusCode,
+                body: (trimmed?.isEmpty == false) ? trimmed : nil
+            )
+        }
+
+        struct EmbedResponse: Decodable {
+            let embeddings: [[Float]]
+        }
+        do {
+            return try JSONDecoder().decode(EmbedResponse.self, from: data).embeddings
+        } catch {
+            throw OllamaClientError.decoding(message: error.localizedDescription)
+        }
+    }
+
     // MARK: - Chat (streaming)
 
     func chat(
