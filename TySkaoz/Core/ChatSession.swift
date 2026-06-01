@@ -83,6 +83,20 @@ final class ChatSession {
             let assistantID = assistant.id
             conversation.wrappedValue.messages.append(assistant)
 
+            // Drop the placeholder if nothing was emitted (text or reasoning)
+            // by the time we leave this round — runs on success, cancellation
+            // and thrown errors alike, so a failed round doesn't leave a "…"
+            // bubble in the transcript. Tool calls (if any) carry their own
+            // UI cards. Reasoning kept because the provider expects it back
+            // in the next round's history.
+            defer {
+                if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }),
+                   conversation.wrappedValue.messages[idx].content.isEmpty,
+                   (conversation.wrappedValue.messages[idx].reasoningContent ?? "").isEmpty {
+                    conversation.wrappedValue.messages.remove(at: idx)
+                }
+            }
+
             // Inject long-term memory as a leading system message (never
             // persisted to the conversation — purely request-time context).
             var history: [ChatMessage] = []
@@ -110,16 +124,6 @@ final class ChatSession {
                 case .toolCall(let id, let name, let argumentsJSON, let signature):
                     pendingCalls.append((id, name, argumentsJSON, signature))
                 }
-            }
-
-            // If the assistant produced no text AND no reasoning this round,
-            // drop the empty placeholder — tool calls (if any) carry their
-            // own UI cards. Keep it if reasoning_content is present: the
-            // provider expects it back in the next round's history.
-            if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }),
-               conversation.wrappedValue.messages[idx].content.isEmpty,
-               (conversation.wrappedValue.messages[idx].reasoningContent ?? "").isEmpty {
-                conversation.wrappedValue.messages.remove(at: idx)
             }
 
             if pendingCalls.isEmpty { return }
