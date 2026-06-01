@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 326262872FC455B3001B46C0 /* MarkdownUI */; };
+		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -57,6 +58,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */,
+				7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -118,6 +120,7 @@
 			name = TySkaoz;
 			packageProductDependencies = (
 				326262872FC455B3001B46C0 /* MarkdownUI */,
+				7DA1B2C3D4E5F60708090002 /* GRDB */,
 			);
 			productName = TySkaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TySkaoz.app */;
@@ -203,6 +206,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -436,6 +440,11 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -482,6 +491,11 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -507,6 +521,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TySkaoz.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TySkaoz";
 			};
@@ -533,6 +552,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TySkaoz.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TySkaoz";
 			};
@@ -558,6 +582,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = TySkaoz;
 			};
@@ -583,6 +612,11 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = TySkaoz;
 			};
@@ -638,6 +672,14 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -645,6 +687,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
