@@ -381,21 +381,31 @@ struct WikiToolsTests {
         let tool = WriteWikiPageTool(context: ctx)
         let first = try JSONSerialization.data(withJSONObject: [
             "path": "sucre.md",
-            "content": "---\nid: sucre\ntitle: Le Sucre\n---\nv1"
+            "content": "---\nid: sucre\ntitle: Le Sucre\n---\nv1 historique"
         ])
         _ = try await tool.execute(arguments: first)
 
         // Second write — same title (case-insensitive), different path.
         let second = try JSONSerialization.data(withJSONObject: [
             "path": "le-sucre.md",
-            "content": "---\nid: le-sucre\ntitle: le sucre\n---\nv2"
+            "content": "---\nid: le-sucre\ntitle: le sucre\n---\nv2 nouveau"
         ])
-        await #expect(throws: ToolError.self) {
+        var caughtMessage: String?
+        do {
             _ = try await tool.execute(arguments: second)
+        } catch let e as ToolError {
+            caughtMessage = e.errorDescription
         }
 
-        // Only the original file is on disk; the duplicate path
-        // never landed.
+        #expect(caughtMessage != nil)
+        // The enriched error must include the existing path, hash hint,
+        // and the live content so the agent can merge without an extra
+        // read_page round-trip.
+        #expect(caughtMessage?.contains("sucre.md") == true)
+        #expect(caughtMessage?.contains("expected_hash") == true)
+        #expect(caughtMessage?.contains("v1 historique") == true)
+
+        // The duplicate path never lands on disk.
         let fm = FileManager.default
         #expect(fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("sucre.md").path))
         #expect(!fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("le-sucre.md").path))
