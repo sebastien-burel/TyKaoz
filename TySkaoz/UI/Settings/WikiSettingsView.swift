@@ -8,6 +8,7 @@ struct WikiSettingsView: View {
     @Environment(WikiManager.self) private var wiki
 
     @State private var reindexing = false
+    @State private var rebuilding = false
     @State private var lastReindexAt: Date?
 
     var body: some View {
@@ -69,13 +70,45 @@ struct WikiSettingsView: View {
                             Text("Indexer maintenant")
                         }
                     }
-                    .disabled(reindexing || wiki.state.context == nil)
+                    .disabled(reindexing || rebuilding || wiki.state.context == nil)
 
                     if let at = lastReindexAt {
                         Text("Dernière indexation : \(at.formatted(date: .omitted, time: .standard))")
                             .font(Brand.Fonts.body(11))
                             .foregroundStyle(.secondary)
                     }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        Task {
+                            rebuilding = true
+                            await wiki.rebuildIndex(
+                                settings: settings,
+                                ollamaBaseURL: settings.serverURL
+                            )
+                            lastReindexAt = .now
+                            rebuilding = false
+                        }
+                    } label: {
+                        if rebuilding {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Reconstruction…")
+                            }
+                        } else {
+                            Text("Reconstruire l'index")
+                        }
+                    }
+                    .disabled(rebuilding || reindexing)
+                    Text("""
+                    Supprime l'index SQLite et le reconstruit depuis le \
+                    markdown sur disque. Nécessaire quand la dimension \
+                    d'embedding change (ex : passage de nomic-embed-text \
+                    768 à bge-m3 1024).
+                    """)
+                        .font(Brand.Fonts.body(11))
+                        .foregroundStyle(.secondary)
                 }
             }
         }

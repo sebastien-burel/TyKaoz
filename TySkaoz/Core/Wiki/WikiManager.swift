@@ -102,6 +102,35 @@ final class WikiManager {
         _ = try? await ctx.makeIndexer().reindexAll()
     }
 
+    /// Nukes the SQLite index and rebuilds it from scratch against the
+    /// current embedding dimension. Used when the user changes
+    /// `wikiEmbeddingDimension` (locked into the schema at first open
+    /// — bge-m3 = 1024, nomic-embed-text = 768) and the existing
+    /// vectors can't be mixed.
+    ///
+    /// Safe because the markdown under `wiki/` is canonical: the
+    /// index is derived data, reconstructible at any time.
+    func rebuildIndex(settings: AppSettings, ollamaBaseURL: URL?) async {
+        tearDown()
+        state = .disabled
+        activeOllamaURL = nil
+        activeModelID = nil
+
+        let storeRoot = Self.defaultStoreRoot()
+        let dbURL = storeRoot.appendingPathComponent("index.sqlite")
+        try? FileManager.default.removeItem(at: dbURL)
+        // GRDB writes -wal and -shm files next to the DB; clear them
+        // too, otherwise the next open will see a stale journal.
+        for suffix in ["-wal", "-shm"] {
+            let extra = dbURL.deletingPathExtension()
+                .appendingPathExtension("sqlite\(suffix)")
+            try? FileManager.default.removeItem(at: extra)
+        }
+
+        reconcile(settings: settings, ollamaBaseURL: ollamaBaseURL)
+        await reindexNow()
+    }
+
     private func tearDown() {
         watcher?.stop()
         watcher = nil
