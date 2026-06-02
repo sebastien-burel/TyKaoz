@@ -34,6 +34,7 @@ struct WikiBrowserView: View {
             Picker("Mode", selection: $mode) {
                 Text("Pages").tag(WikiMode.pages)
                 Text("Audit").tag(WikiMode.lint)
+                Text("Graphe").tag(WikiMode.graph)
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -45,6 +46,8 @@ struct WikiBrowserView: View {
                 WikiPagesList(context: context, selection: $selection)
             case .lint:
                 lintSidebar
+            case .graph:
+                graphSidebar
             }
         }
         .frame(minWidth: 220)
@@ -52,12 +55,20 @@ struct WikiBrowserView: View {
     }
 
     private var lintSidebar: some View {
+        sidebarHint(icon: "checklist", text: "Audit en cours dans le panneau de droite.")
+    }
+
+    private var graphSidebar: some View {
+        sidebarHint(icon: "circle.hexagongrid", text: "Vue graphe à droite. Clique sur un nœud pour ouvrir la page.")
+    }
+
+    private func sidebarHint(icon: String, text: String) -> some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "checklist")
+            Image(systemName: icon)
                 .font(.system(size: 32))
                 .foregroundStyle(Brand.Colors.tide.opacity(0.6))
-            Text("Audit en cours dans le panneau de droite.")
+            Text(text)
                 .font(Brand.Fonts.body(11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -88,6 +99,14 @@ struct WikiBrowserView: View {
             }
         case .lint:
             WikiLintView(context: context, selection: Binding(
+                get: { selection },
+                set: { newValue in
+                    selection = newValue
+                    if newValue != nil { mode = .pages }
+                }
+            ))
+        case .graph:
+            WikiGraphView(context: context, selection: Binding(
                 get: { selection },
                 set: { newValue in
                     selection = newValue
@@ -143,4 +162,5 @@ struct WikiPageRef: Hashable, Identifiable {
 enum WikiMode: Hashable {
     case pages
     case lint
+    case graph
 }
