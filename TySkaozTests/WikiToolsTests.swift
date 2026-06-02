@@ -373,6 +373,60 @@ struct WikiToolsTests {
     }
 
     @Test
+    func writeRefusesTitleCollisionOnNewPath() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // First write — creates the canonical "Le Sucre" page.
+        let tool = WriteWikiPageTool(context: ctx)
+        let first = try JSONSerialization.data(withJSONObject: [
+            "path": "sucre.md",
+            "content": "---\nid: sucre\ntitle: Le Sucre\n---\nv1"
+        ])
+        _ = try await tool.execute(arguments: first)
+
+        // Second write — same title (case-insensitive), different path.
+        let second = try JSONSerialization.data(withJSONObject: [
+            "path": "le-sucre.md",
+            "content": "---\nid: le-sucre\ntitle: le sucre\n---\nv2"
+        ])
+        await #expect(throws: ToolError.self) {
+            _ = try await tool.execute(arguments: second)
+        }
+
+        // Only the original file is on disk; the duplicate path
+        // never landed.
+        let fm = FileManager.default
+        #expect(fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("sucre.md").path))
+        #expect(!fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("le-sucre.md").path))
+    }
+
+    @Test
+    func writeAllowsSameTitleOnSamePath() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Pre-seed.
+        let url = ctx.wikiRoot.appendingPathComponent("sucre.md")
+        let original = "---\nid: sucre\ntitle: Le Sucre\n---\nv1"
+        try original.write(to: url, atomically: true, encoding: .utf8)
+        let hash = HashStore.sha256(original)
+
+        // Update on the SAME path with the SAME title — collision guard
+        // must not fire here.
+        let tool = WriteWikiPageTool(context: ctx)
+        let update = try JSONSerialization.data(withJSONObject: [
+            "path": "sucre.md",
+            "content": "---\nid: sucre\ntitle: Le Sucre\n---\nv2 contenu enrichi",
+            "expected_hash": hash
+        ])
+        _ = try await tool.execute(arguments: update)
+
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        #expect(onDisk.contains("v2 contenu enrichi"))
+    }
+
+    @Test
     func writeStampsCreatedAndUpdatedDates() async throws {
         let (ctx, tempDir) = try await Self.makeContext()
         defer { try? FileManager.default.removeItem(at: tempDir) }

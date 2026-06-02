@@ -22,12 +22,21 @@ struct WriteWikiPageTool: Tool {
     let spec = ToolSpec(
         name: "write_wiki_page",
         description: """
-        Creates or updates a wiki page at the given relative path. When
-        overwriting, pass expected_hash from a previous read_page to
-        detect concurrent edits. The tool normalises wikilinks (turns
-        [[Title]] into [[id|Title]] when the target exists), writes
-        the file, auto-commits via git, and re-indexes so search_wiki
-        sees the change immediately.
+        Creates or updates a wiki page at the given relative path.
+
+        BEFORE writing, ALWAYS call `search_wiki` with the topic so
+        you don't create a duplicate of an existing page — the wiki
+        rejects writes whose title clashes with another page (different
+        path). If you find an existing match, call `read_page` to get
+        its current hash, then call this tool with the SAME path and
+        `expected_hash` to update it in place.
+
+        When overwriting, pass expected_hash from the read_page result
+        to detect concurrent edits. The tool normalises wikilinks
+        (turns [[Title]] into [[id|Title]] when the target exists),
+        stamps the frontmatter `created` / `updated` dates, writes the
+        file, auto-commits via git, and re-indexes so search_wiki sees
+        the change immediately.
         """,
         inputSchemaJSON: """
         {
@@ -78,6 +87,25 @@ struct WriteWikiPageTool: Tool {
                     Relis-la, refais ton raisonnement, et réessaie.
                     """)
             }
+        }
+
+        // 2b. Anti-duplicate guard: if some OTHER page already carries
+        //     the title the agent wants to write under this new path,
+        //     refuse and tell the agent to update that page instead.
+        //     Title comparison is case-insensitive and trims spaces —
+        //     "Le Sucre" and "le sucre" are the same wiki concept.
+        if try await Self.titleCollision(
+            withContent: args.content,
+            atPath: args.path,
+            pool: context.pool
+        ) {
+            throw ToolError.execution(message: """
+                Une page wiki avec ce titre existe déjà sous un autre \
+                chemin. Lance d'abord `search_wiki` pour la trouver, \
+                puis `read_page` pour récupérer son hash, puis appelle \
+                `write_wiki_page` avec ce chemin existant + \
+                expected_hash pour la mettre à jour.
+                """)
         }
 
         // 3. Normalise wikilinks against the live page index.
@@ -161,6 +189,32 @@ struct WriteWikiPageTool: Tool {
         if !sawUpdated { rewritten.append("updated: \(todayStr)") }
 
         return "---\n\(rewritten.joined(separator: "\n"))\n---\n\(body)"
+    }
+
+    /// Returns true when the title parsed out of `content` already
+    /// belongs to another page in the DB whose path is different
+    /// from `atPath`. Comparison is case-insensitive on the
+    /// trimmed title.
+    static func titleCollision(
+        withContent content: String,
+        atPath: String,
+        pool: DatabasePool
+    ) async throws -> Bool {
+        let (fm, _) = MarkdownParser.splitFrontmatter(content)
+        guard let rawTitle = MarkdownParser.parseFrontmatter(fm)["title"]?.first else {
+            return false  // no title → no collision logic possible
+        }
+        let normalized = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else { return false }
+
+        return try await pool.read { db in
+            let conflict = try Row.fetchOne(db, sql: """
+                SELECT path FROM pages
+                WHERE lower(trim(title)) = ? AND path != ?
+                LIMIT 1;
+            """, arguments: [normalized, atPath])
+            return conflict != nil
+        }
     }
 
     /// Builds the `title → id` index from the DB and runs the pure
