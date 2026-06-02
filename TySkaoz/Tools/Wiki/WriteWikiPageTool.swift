@@ -81,7 +81,12 @@ struct WriteWikiPageTool: Tool {
         }
 
         // 3. Normalise wikilinks against the live page index.
-        let normalised = try await Self.normaliseWikilinks(args.content, pool: context.pool)
+        let withLinks = try await Self.normaliseWikilinks(args.content, pool: context.pool)
+        // 4. Stamp frontmatter dates so the agent can't guess them
+        //    wrong (it doesn't know the current date). `created` is
+        //    preserved from disk on overwrite; `updated` always gets
+        //    today.
+        let normalised = Self.stampFrontmatter(withLinks, existingPageURL: fullURL)
         let newHash = HashStore.sha256(normalised)
 
         // 4. Atomic write.
@@ -109,6 +114,53 @@ struct WriteWikiPageTool: Tool {
         hash: \(newHash)
         \(gitLine)
         """
+    }
+
+    /// Overwrites `updated` to today, and `created` to today when the
+    /// file is new (or preserves whatever the existing on-disk version
+    /// had). Whatever the agent wrote in those fields is ignored —
+    /// dates are tool-controlled metadata.
+    static func stampFrontmatter(
+        _ content: String,
+        existingPageURL: URL,
+        today: Date = .now
+    ) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        let todayStr = formatter.string(from: today)
+
+        // Preserve the existing `created` when the file already exists.
+        let preservedCreated: String? = (
+            try? String(contentsOf: existingPageURL, encoding: .utf8)
+        ).flatMap { existing in
+            let (fm, _) = MarkdownParser.splitFrontmatter(existing)
+            return MarkdownParser.parseFrontmatter(fm)["created"]?.first
+        }
+        let createdStr = preservedCreated ?? todayStr
+
+        let (frontmatterRaw, body) = MarkdownParser.splitFrontmatter(content)
+        let fmLines: [String] = frontmatterRaw?
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init) ?? []
+
+        var rewritten: [String] = []
+        var sawCreated = false
+        var sawUpdated = false
+        for line in fmLines {
+            if line.hasPrefix("created:") {
+                rewritten.append("created: \(createdStr)")
+                sawCreated = true
+            } else if line.hasPrefix("updated:") {
+                rewritten.append("updated: \(todayStr)")
+                sawUpdated = true
+            } else {
+                rewritten.append(line)
+            }
+        }
+        if !sawCreated { rewritten.append("created: \(createdStr)") }
+        if !sawUpdated { rewritten.append("updated: \(todayStr)") }
+
+        return "---\n\(rewritten.joined(separator: "\n"))\n---\n\(body)"
     }
 
     /// Builds the `title → id` index from the DB and runs the pure

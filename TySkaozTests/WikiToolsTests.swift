@@ -373,6 +373,88 @@ struct WikiToolsTests {
     }
 
     @Test
+    func writeStampsCreatedAndUpdatedDates() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let tool = WriteWikiPageTool(context: ctx)
+        // Agent writes a bogus year — tool should overwrite both fields.
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "notes/dated.md",
+            "content": """
+            ---
+            id: dated
+            title: Dated
+            created: 1999-01-01
+            ---
+            body
+            """
+        ])
+        _ = try await tool.execute(arguments: args)
+
+        let onDisk = try String(
+            contentsOf: ctx.wikiRoot.appendingPathComponent("notes/dated.md"),
+            encoding: .utf8
+        )
+        // The "1999-01-01" must be gone for a fresh page.
+        #expect(!onDisk.contains("1999-01-01"))
+        // Both fields stamped with today's ISO date.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        let today = formatter.string(from: .now)
+        #expect(onDisk.contains("created: \(today)"))
+        #expect(onDisk.contains("updated: \(today)"))
+    }
+
+    @Test
+    func writePreservesCreatedOnOverwrite() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Pre-seed a page with a real created date via the file system,
+        // then read its hash for the CAS round-trip.
+        let url = ctx.wikiRoot.appendingPathComponent("notes/preserved.md")
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let firstWrite = """
+        ---
+        id: preserved
+        title: Preserved
+        created: 2025-01-15
+        updated: 2025-01-15
+        ---
+        original body
+        """
+        try firstWrite.write(to: url, atomically: true, encoding: .utf8)
+        let hash = HashStore.sha256(firstWrite)
+
+        let tool = WriteWikiPageTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [
+            "path": "notes/preserved.md",
+            "content": """
+            ---
+            id: preserved
+            title: Preserved
+            ---
+            revised body
+            """,
+            "expected_hash": hash
+        ])
+        _ = try await tool.execute(arguments: args)
+
+        let onDisk = try String(contentsOf: url, encoding: .utf8)
+        // created kept from the previous version.
+        #expect(onDisk.contains("created: 2025-01-15"))
+        // updated bumped to today.
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withFullDate]
+        #expect(onDisk.contains("updated: \(formatter.string(from: .now))"))
+        #expect(onDisk.contains("revised body"))
+    }
+
+    @Test
     func writeReportsGitStatus() async throws {
         let (ctx, tempDir) = try await Self.makeContext()
         defer { try? FileManager.default.removeItem(at: tempDir) }
