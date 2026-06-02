@@ -20,6 +20,11 @@ final class WikiFileWatcher {
     /// when work has settled. Production code doesn't need it.
     private(set) var lastIndexReport: IndexReport?
 
+    /// Optional UI hook fired after each successful reindex. Wired by
+    /// `WikiManager` so the wiki browser refreshes when an external
+    /// edit (Obsidian, terminal `mv`) lands.
+    var onIndexed: (() -> Void)?
+
     init(context: WikiContext, debounceMs: UInt64 = 500) {
         self.context = context
         self.debounceMs = debounceMs
@@ -90,6 +95,7 @@ final class WikiFileWatcher {
             let indexer = self.context.makeIndexer()
             if let report = try? await indexer.reindexAll() {
                 self.lastIndexReport = report
+                self.onIndexed?()
             }
         }
     }

@@ -22,6 +22,9 @@ final class WikiManager {
     /// `reconcile()` rebuilds when these change.
     private(set) var activeOllamaURL: URL?
     private(set) var activeModelID: String?
+    /// Bumped after every successful (re)index. UI views observe it
+    /// via `.task(id: wiki.indexRevision)` to refresh their snapshot.
+    private(set) var indexRevision: Int = 0
     @ObservationIgnored private var watcher: WikiFileWatcher?
 
     /// Default store location inside the sandbox container — works
@@ -84,6 +87,9 @@ final class WikiManager {
             try ctx.bootstrapDirectoriesIfNeeded()
 
             let fw = WikiFileWatcher(context: ctx)
+            fw.onIndexed = { [weak self] in
+                self?.indexRevision &+= 1
+            }
             try? fw.start()
             self.watcher = fw
             self.state = .ready(ctx)
@@ -100,6 +106,7 @@ final class WikiManager {
     func reindexNow() async {
         guard let ctx = state.context else { return }
         _ = try? await ctx.makeIndexer().reindexAll()
+        indexRevision &+= 1
     }
 
     /// Nukes the SQLite index and rebuilds it from scratch against the
@@ -129,6 +136,7 @@ final class WikiManager {
 
         reconcile(settings: settings, ollamaBaseURL: ollamaBaseURL)
         await reindexNow()
+        indexRevision &+= 1
     }
 
     private func tearDown() {

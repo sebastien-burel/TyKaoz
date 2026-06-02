@@ -16,6 +16,8 @@ extension FocusedValues {
 
 /// Replaces the SwiftUI-default `.newItem` group so Cmd-N starts a new
 /// conversation in the current window and Cmd-Shift-N opens a new window.
+/// Adds a Wiki menu entry under "Window" so Cmd-Shift-K opens the wiki
+/// browser as its own window.
 struct AppCommands: Commands {
     @FocusedValue(\.newConversationAction) private var newConversation
     @Environment(\.openWindow) private var openWindow
@@ -32,6 +34,13 @@ struct AppCommands: Commands {
                 openWindow(id: TySkaozApp.mainWindowID)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
+        }
+
+        CommandGroup(after: .windowArrangement) {
+            Button("Wiki") {
+                openWindow(id: TySkaozApp.wikiWindowID)
+            }
+            .keyboardShortcut("k", modifiers: [.command, .shift])
         }
     }
 }

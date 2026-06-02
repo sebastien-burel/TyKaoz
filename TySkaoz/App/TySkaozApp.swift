@@ -6,6 +6,9 @@ struct TySkaozApp: App {
     /// `openWindow(id:)` to spawn a new main window.
     static let mainWindowID = "main"
 
+    /// Wiki browser window — opened via Cmd-Shift-K or the View menu.
+    static let wikiWindowID = "wiki"
+
     @State private var settings = AppSettings()
     @State private var conversationStore = ConversationStore()
     @State private var fileSpaceStore = FileSpaceStore()
@@ -53,5 +56,13 @@ struct TySkaozApp: App {
                 .environment(wikiManager)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
+
+        WindowGroup(id: Self.wikiWindowID) {
+            WikiBrowserView()
+                .environment(settings)
+                .environment(wikiManager)
+                .environment(\.locale, Locale(identifier: "fr_FR"))
+        }
+        .defaultSize(width: 900, height: 600)
     }
 }
