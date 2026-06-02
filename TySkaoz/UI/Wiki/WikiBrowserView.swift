@@ -2,13 +2,14 @@ import SwiftUI
 import GRDB
 
 /// Top-level shell for the wiki browser window. Three-pane layout:
-/// sidebar with page list, detail pane that switches between the
-/// page reader (default), the lint panel, and the graph view (later
-/// commits). Sidebar refreshes whenever the index changes via the
-/// `WikiManager.indexRevision` ticker.
+/// sidebar with page list (with search), detail pane that switches
+/// between the page reader, the lint panel, and the graph view
+/// (graph in a later commit). The mode picker at the top of the
+/// sidebar swaps the detail pane.
 struct WikiBrowserView: View {
     @Environment(WikiManager.self) private var wiki
 
+    @State private var mode: WikiMode = .pages
     @State private var selection: WikiPageRef?
 
     var body: some View {
@@ -19,31 +20,80 @@ struct WikiBrowserView: View {
             failurePlaceholder(message)
         case .ready(let context):
             NavigationSplitView {
-                WikiPagesList(context: context, selection: $selection)
-                    .frame(minWidth: 220)
-                    .navigationTitle("Wiki")
+                sidebar(context: context)
             } detail: {
-                detail(for: selection, context: context)
+                detail(context: context)
             }
             .background(Brand.Colors.paper)
         }
     }
 
     @ViewBuilder
-    private func detail(for ref: WikiPageRef?, context: WikiContext) -> some View {
-        if let ref {
-            WikiPageReaderView(pageRef: ref, context: context, selection: $selection)
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: "books.vertical")
-                    .font(.system(size: 36))
-                    .foregroundStyle(Brand.Colors.tide.opacity(0.6))
-                Text("Sélectionne une page dans la sidebar.")
-                    .font(Brand.Fonts.body(13))
-                    .foregroundStyle(Brand.Colors.slate.opacity(0.7))
+    private func sidebar(context: WikiContext) -> some View {
+        VStack(spacing: 0) {
+            Picker("Mode", selection: $mode) {
+                Text("Pages").tag(WikiMode.pages)
+                Text("Audit").tag(WikiMode.lint)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Brand.Colors.paper)
+            .pickerStyle(.segmented)
+            .padding(8)
+
+            Divider().background(Brand.Colors.slate.opacity(0.15))
+
+            switch mode {
+            case .pages:
+                WikiPagesList(context: context, selection: $selection)
+            case .lint:
+                lintSidebar
+            }
+        }
+        .frame(minWidth: 220)
+        .navigationTitle("Wiki")
+    }
+
+    private var lintSidebar: some View {
+        VStack(spacing: 12) {
+            Spacer()
+            Image(systemName: "checklist")
+                .font(.system(size: 32))
+                .foregroundStyle(Brand.Colors.tide.opacity(0.6))
+            Text("Audit en cours dans le panneau de droite.")
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Brand.Colors.paper)
+    }
+
+    @ViewBuilder
+    private func detail(context: WikiContext) -> some View {
+        switch mode {
+        case .pages:
+            if let selection {
+                WikiPageReaderView(pageRef: selection, context: context, selection: $selection)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "books.vertical")
+                        .font(.system(size: 36))
+                        .foregroundStyle(Brand.Colors.tide.opacity(0.6))
+                    Text("Sélectionne une page dans la sidebar.")
+                        .font(Brand.Fonts.body(13))
+                        .foregroundStyle(Brand.Colors.slate.opacity(0.7))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Brand.Colors.paper)
+            }
+        case .lint:
+            WikiLintView(context: context, selection: Binding(
+                get: { selection },
+                set: { newValue in
+                    selection = newValue
+                    if newValue != nil { mode = .pages }
+                }
+            ))
         }
     }
 
@@ -88,4 +138,9 @@ struct WikiPageRef: Hashable, Identifiable {
     let id: String
     let title: String
     let path: String
+}
+
+enum WikiMode: Hashable {
+    case pages
+    case lint
 }
