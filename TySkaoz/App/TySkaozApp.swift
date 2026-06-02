@@ -33,6 +33,12 @@ struct TySkaozApp: App {
                 .onChange(of: settings.wikiEnabled) { _, _ in
                     wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
                 }
+                .onChange(of: settings.serverURLString) { _, _ in
+                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                }
+                .onChange(of: settings.wikiEmbeddingModelID) { _, _ in
+                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                }
         }
         .commands {
             AppCommands()

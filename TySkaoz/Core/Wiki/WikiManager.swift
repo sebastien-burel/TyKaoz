@@ -18,6 +18,10 @@ final class WikiManager {
     }
 
     private(set) var state: State = .disabled
+    /// The Ollama URL + model the current context was built with.
+    /// `reconcile()` rebuilds when these change.
+    private(set) var activeOllamaURL: URL?
+    private(set) var activeModelID: String?
     @ObservationIgnored private var watcher: WikiFileWatcher?
 
     /// Default store location inside the sandbox container — works
@@ -41,13 +45,24 @@ final class WikiManager {
         guard settings.wikiEnabled else {
             tearDown()
             state = .disabled
+            activeOllamaURL = nil
+            activeModelID = nil
             return
         }
 
-        // Already running? Embedder + dim must still match the live
-        // schema — if the user flipped them, we'd need a rebuild
-        // migration. For MVP, refuse silently and surface in the UI.
-        if case .ready = state { return }
+        // If we're already ready AND the embedder config hasn't moved,
+        // there's nothing to do. The embedding dimension is locked to
+        // the DB schema, so we don't rebuild on dim changes — a
+        // rebuild-vectoriel migration covers that path.
+        if case .ready = state,
+           activeOllamaURL == ollamaBaseURL,
+           activeModelID == settings.wikiEmbeddingModelID {
+            return
+        }
+
+        // Embedder config moved — tear down and rebuild so the new
+        // OllamaEmbeddingProvider gets the current URL/model.
+        tearDown()
 
         do {
             let storeRoot = Self.defaultStoreRoot()
@@ -72,8 +87,12 @@ final class WikiManager {
             try? fw.start()
             self.watcher = fw
             self.state = .ready(ctx)
+            self.activeOllamaURL = ollamaBaseURL
+            self.activeModelID = settings.wikiEmbeddingModelID
         } catch {
             state = .failed(message: error.localizedDescription)
+            activeOllamaURL = nil
+            activeModelID = nil
         }
     }
 

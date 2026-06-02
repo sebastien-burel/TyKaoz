@@ -22,6 +22,10 @@ struct WikiSettingsView: View {
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
+                    Text("Ollama : \(wiki.activeOllamaURL?.absoluteString ?? "non configuré (voir Réglages → Ollama)")")
+                        .font(Brand.Fonts.mono(11))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
             }
 
