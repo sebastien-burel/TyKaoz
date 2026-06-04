@@ -38,6 +38,63 @@ struct OpenAICompatibleClient {
         self.session = session
     }
 
+    // MARK: - Embeddings
+
+    /// OpenAI-standard `/embeddings` request. Used by the wiki when
+    /// the user routes embeddings through a vLLM / LM Studio /
+    /// llama.cpp server rather than Ollama.
+    func embed(model: String, inputs: [String]) async throws -> [[Float]] {
+        guard !inputs.isEmpty else { return [] }
+
+        var request = URLRequest(url: baseURL.appending(path: "/embeddings"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.timeoutInterval = 60
+
+        let body: [String: Any] = ["model": model, "input": inputs]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAICompatibleError.network(message: "réponse non-HTTP")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let body = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw OpenAICompatibleError.http(
+                status: http.statusCode,
+                body: (body?.isEmpty == false) ? body : nil
+            )
+        }
+
+        struct EmbedResponse: Decodable {
+            struct Item: Decodable {
+                let embedding: [Float]
+                let index: Int
+            }
+            let data: [Item]
+        }
+        do {
+            let decoded = try JSONDecoder().decode(EmbedResponse.self, from: data)
+            // The OpenAI spec doesn't guarantee order — sort by `index`
+            // so callers can zip results back to their input array.
+            return decoded.data.sorted { $0.index < $1.index }.map(\.embedding)
+        } catch {
+            throw OpenAICompatibleError.decoding(message: error.localizedDescription)
+        }
+    }
+
     // MARK: - List models
 
     func listModels() async throws -> [OpenAICompatibleModelsResponse.Model] {

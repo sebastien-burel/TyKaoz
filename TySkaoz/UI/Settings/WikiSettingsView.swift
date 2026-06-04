@@ -23,7 +23,7 @@ struct WikiSettingsView: View {
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    Text("Ollama : \(wiki.activeOllamaURL?.absoluteString ?? "non configuré (voir Réglages → Ollama)")")
+                    Text("Embedder : \(wiki.activeEmbedderURL?.absoluteString ?? "non configuré (voir le provider ci-dessous)")")
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -31,11 +31,28 @@ struct WikiSettingsView: View {
             }
 
             if settings.wikiEnabled {
+                Section("Source d'embedding") {
+                    Picker("Provider", selection: $settings.wikiEmbeddingProviderID) {
+                        Text("Ollama").tag("ollama")
+                        Text("Local OpenAI (vLLM, LM Studio…)").tag("localOpenAI")
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("""
+                    Réutilise l'URL configurée dans le provider \
+                    correspondant (Réglages → Ollama ou Local OpenAI). \
+                    Le provider sert uniquement les embeddings ici ; \
+                    le provider de chat reste indépendant.
+                    """)
+                        .font(Brand.Fonts.body(11))
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("Modèle d'embedding") {
                     TextField(
-                        "Identifiant du modèle Ollama",
+                        "Identifiant du modèle",
                         text: $settings.wikiEmbeddingModelID,
-                        prompt: Text("nomic-embed-text, bge-m3, mxbai-embed-large…")
+                        prompt: Text("nomic-embed-text, bge-m3, BAAI/bge-m3…")
                     )
                     .textFieldStyle(.roundedBorder)
                     .font(Brand.Fonts.mono(12))
@@ -83,10 +100,7 @@ struct WikiSettingsView: View {
                     Button(role: .destructive) {
                         Task {
                             rebuilding = true
-                            await wiki.rebuildIndex(
-                                settings: settings,
-                                ollamaBaseURL: settings.serverURL
-                            )
+                            await wiki.rebuildIndex(settings: settings)
                             lastReindexAt = .now
                             rebuilding = false
                         }

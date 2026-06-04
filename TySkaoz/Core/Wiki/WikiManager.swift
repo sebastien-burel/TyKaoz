@@ -18,10 +18,16 @@ final class WikiManager {
     }
 
     private(set) var state: State = .disabled
-    /// The Ollama URL + model the current context was built with.
-    /// `reconcile()` rebuilds when these change.
-    private(set) var activeOllamaURL: URL?
+    /// Snapshot of the embedder config the current context was built
+    /// with. `reconcile()` rebuilds when these drift.
+    private(set) var activeProviderID: String?
+    private(set) var activeEmbedderURL: URL?
     private(set) var activeModelID: String?
+
+    /// Backwards-compat alias surfaced in the wiki settings panel.
+    var activeOllamaURL: URL? {
+        activeProviderID == "ollama" ? activeEmbedderURL : nil
+    }
     /// Bumped after every successful (re)index. UI views observe it
     /// via `.task(id: wiki.indexRevision)` to refresh their snapshot.
     private(set) var indexRevision: Int = 0
@@ -44,27 +50,31 @@ final class WikiManager {
     /// Builds (or rebuilds) the context based on the current settings.
     /// Idempotent: if the manager is already ready with the same
     /// configuration, this is a no-op.
-    func reconcile(settings: AppSettings, ollamaBaseURL: URL?) {
+    func reconcile(settings: AppSettings) {
         guard settings.wikiEnabled else {
             tearDown()
             state = .disabled
-            activeOllamaURL = nil
+            activeProviderID = nil
+            activeEmbedderURL = nil
             activeModelID = nil
             return
         }
+
+        let providerID = settings.wikiEmbeddingProviderID
+        let embedderURL = Self.embedderURL(for: providerID, settings: settings)
 
         // If we're already ready AND the embedder config hasn't moved,
         // there's nothing to do. The embedding dimension is locked to
         // the DB schema, so we don't rebuild on dim changes — a
         // rebuild-vectoriel migration covers that path.
         if case .ready = state,
-           activeOllamaURL == ollamaBaseURL,
+           activeProviderID == providerID,
+           activeEmbedderURL == embedderURL,
            activeModelID == settings.wikiEmbeddingModelID {
             return
         }
 
-        // Embedder config moved — tear down and rebuild so the new
-        // OllamaEmbeddingProvider gets the current URL/model.
+        // Embedder config moved — tear down and rebuild.
         tearDown()
 
         do {
@@ -76,13 +86,11 @@ final class WikiManager {
                 at: storeRoot.appendingPathComponent("index.sqlite"),
                 embeddingDimension: settings.wikiEmbeddingDimension
             )
-            let embedder: EmbeddingProvider? = ollamaBaseURL.map {
-                OllamaEmbeddingProvider(
-                    baseURL: $0,
-                    modelID: settings.wikiEmbeddingModelID,
-                    dimension: settings.wikiEmbeddingDimension
-                )
-            }
+            let embedder: EmbeddingProvider? = Self.makeEmbedder(
+                providerID: providerID,
+                url: embedderURL,
+                settings: settings
+            )
             let ctx = WikiContext(storeRoot: storeRoot, pool: pool, embedder: embedder)
             try ctx.bootstrapDirectoriesIfNeeded()
 
@@ -93,12 +101,50 @@ final class WikiManager {
             try? fw.start()
             self.watcher = fw
             self.state = .ready(ctx)
-            self.activeOllamaURL = ollamaBaseURL
+            self.activeProviderID = providerID
+            self.activeEmbedderURL = embedderURL
             self.activeModelID = settings.wikiEmbeddingModelID
         } catch {
             state = .failed(message: error.localizedDescription)
-            activeOllamaURL = nil
+            activeProviderID = nil
+            activeEmbedderURL = nil
             activeModelID = nil
+        }
+    }
+
+    /// Picks the URL the configured embedding provider should hit.
+    static func embedderURL(for providerID: String, settings: AppSettings) -> URL? {
+        switch providerID {
+        case "localOpenAI": return settings.localOpenAIBaseURL
+        case "ollama":      return settings.serverURL
+        default:            return settings.serverURL
+        }
+    }
+
+    /// Constructs the right concrete `EmbeddingProvider` for the chosen
+    /// runtime. Returns nil when the prerequisite (URL, key…) is
+    /// missing — the wiki tools will then refuse to search rather than
+    /// firing into the void.
+    private static func makeEmbedder(
+        providerID: String,
+        url: URL?,
+        settings: AppSettings
+    ) -> EmbeddingProvider? {
+        guard let url else { return nil }
+        switch providerID {
+        case "localOpenAI":
+            return LocalOpenAIEmbeddingProvider(
+                baseURL: url,
+                apiKey: settings.localOpenAIAPIKey,
+                modelID: settings.wikiEmbeddingModelID,
+                dimension: settings.wikiEmbeddingDimension
+            )
+        default:
+            return OllamaEmbeddingProvider(
+                baseURL: url,
+                modelID: settings.wikiEmbeddingModelID,
+                dimension: settings.wikiEmbeddingDimension
+            )
         }
     }
 
@@ -117,10 +163,11 @@ final class WikiManager {
     ///
     /// Safe because the markdown under `wiki/` is canonical: the
     /// index is derived data, reconstructible at any time.
-    func rebuildIndex(settings: AppSettings, ollamaBaseURL: URL?) async {
+    func rebuildIndex(settings: AppSettings) async {
         tearDown()
         state = .disabled
-        activeOllamaURL = nil
+        activeProviderID = nil
+        activeEmbedderURL = nil
         activeModelID = nil
 
         let storeRoot = Self.defaultStoreRoot()
@@ -134,7 +181,7 @@ final class WikiManager {
             try? FileManager.default.removeItem(at: extra)
         }
 
-        reconcile(settings: settings, ollamaBaseURL: ollamaBaseURL)
+        reconcile(settings: settings)
         await reindexNow()
         indexRevision &+= 1
     }

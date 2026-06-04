@@ -350,6 +350,14 @@ final class AppSettings {
         didSet { defaults.set(wikiEmbeddingDimension, forKey: Keys.wikiEmbeddingDimension) }
     }
 
+    /// Which provider serves embeddings to the indexer + finder:
+    /// "ollama" (default) reuses `serverURL`; "localOpenAI" reuses
+    /// `localOpenAIBaseURL` + key. The wiki itself stays the same —
+    /// only the request URL changes.
+    var wikiEmbeddingProviderID: String {
+        didSet { defaults.set(wikiEmbeddingProviderID, forKey: Keys.wikiEmbeddingProviderID) }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -415,6 +423,7 @@ final class AppSettings {
         self.wikiEmbeddingModelID = defaults.string(forKey: Keys.wikiEmbeddingModelID) ?? "nomic-embed-text"
         let storedDim = defaults.integer(forKey: Keys.wikiEmbeddingDimension)
         self.wikiEmbeddingDimension = storedDim > 0 ? storedDim : 768
+        self.wikiEmbeddingProviderID = defaults.string(forKey: Keys.wikiEmbeddingProviderID) ?? "ollama"
     }
 
     private enum Keys {
@@ -435,6 +444,7 @@ final class AppSettings {
         static let wikiEnabled = "wiki.enabled"
         static let wikiEmbeddingModelID = "wiki.embeddingModelID"
         static let wikiEmbeddingDimension = "wiki.embeddingDimension"
+        static let wikiEmbeddingProviderID = "wiki.embeddingProviderID"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"

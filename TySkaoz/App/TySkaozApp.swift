@@ -31,16 +31,22 @@ struct TySkaozApp: App {
                 .environment(wikiManager)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
                 .onAppear {
-                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                    wikiManager.reconcile(settings: settings)
                 }
                 .onChange(of: settings.wikiEnabled) { _, _ in
-                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                    wikiManager.reconcile(settings: settings)
                 }
                 .onChange(of: settings.serverURLString) { _, _ in
-                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                    wikiManager.reconcile(settings: settings)
+                }
+                .onChange(of: settings.localOpenAIBaseURLString) { _, _ in
+                    wikiManager.reconcile(settings: settings)
                 }
                 .onChange(of: settings.wikiEmbeddingModelID) { _, _ in
-                    wikiManager.reconcile(settings: settings, ollamaBaseURL: settings.serverURL)
+                    wikiManager.reconcile(settings: settings)
+                }
+                .onChange(of: settings.wikiEmbeddingProviderID) { _, _ in
+                    wikiManager.reconcile(settings: settings)
                 }
         }
         .commands {
