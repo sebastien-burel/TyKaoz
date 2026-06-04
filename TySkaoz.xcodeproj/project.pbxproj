@@ -206,7 +206,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
-				7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -412,6 +412,10 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				EXCLUDED_SOURCE_FILE_NAMES = .gitkeep;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -439,12 +443,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
@@ -463,6 +463,10 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				EXCLUDED_SOURCE_FILE_NAMES = .gitkeep;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -490,12 +494,8 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -507,6 +507,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 82FW35VV68;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -520,12 +524,8 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TySkaoz.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TySkaoz";
 			};
@@ -538,6 +538,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 82FW35VV68;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -551,12 +555,8 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TySkaoz.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TySkaoz";
 			};
@@ -568,6 +568,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 82FW35VV68;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -581,12 +585,8 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = TySkaoz;
 			};
@@ -598,6 +598,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 82FW35VV68;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"SQLITE_CORE=1",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
@@ -611,12 +615,8 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = (
-					"$(inherited)",
-					"SQLITE_CORE=1",
-				);
 				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/TySkaoz/Vendor/sqlite-vec";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TEST_TARGET_NAME = TySkaoz;
 			};
@@ -672,7 +672,7 @@
 				minimumVersion = 2.4.1;
 			};
 		};
-		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
 			requirement = {
@@ -690,7 +690,7 @@
 		};
 		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			package = 7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */

@@ -30,6 +30,17 @@ enum ProviderFactory {
             else { return nil }
             return GoogleProvider(apiKey: settings.googleAPIKey, model: model)
 
+        case "localOpenAI":
+            guard let url = settings.localOpenAIBaseURL,
+                  let model = settings.localOpenAIModel,
+                  !model.isEmpty
+            else { return nil }
+            return LocalOpenAIProvider(
+                baseURL: url,
+                apiKey: settings.localOpenAIAPIKey,
+                model: model
+            )
+
         case "mistral":
             guard !settings.mistralAPIKey.isEmpty,
                   let model = settings.mistralModel,

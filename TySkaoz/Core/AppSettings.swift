@@ -39,6 +39,39 @@ final class AppSettings {
         didSet { defaults.set(googleModel, forKey: Keys.googleModel) }
     }
 
+    // MARK: - Local OpenAI-compatible (vLLM / LM Studio / llama.cpp)
+
+    /// Raw URL string the user types in the settings panel. Validated
+    /// at use site through `localOpenAIBaseURL`. Empty when no local
+    /// server is configured.
+    var localOpenAIBaseURLString: String {
+        didSet { defaults.set(localOpenAIBaseURLString, forKey: Keys.localOpenAIBaseURL) }
+    }
+
+    /// Optional bearer token. Most self-hosted servers don't require
+    /// one; cloud-like deployments behind a gateway might.
+    var localOpenAIAPIKey: String {
+        didSet { KeychainStore.set(localOpenAIAPIKey, account: KeychainAccounts.localOpenAIAPIKey) }
+    }
+
+    var localOpenAIModel: String? {
+        didSet { defaults.set(localOpenAIModel, forKey: Keys.localOpenAIModel) }
+    }
+
+    /// Parsed, validated base URL. `nil` when the string is empty or
+    /// malformed — providers/UI use this to know if the slot is
+    /// configured.
+    var localOpenAIBaseURL: URL? {
+        let trimmed = localOpenAIBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil
+        else { return nil }
+        return url
+    }
+
     // MARK: - Mistral
 
     var mistralAPIKey: String {
@@ -116,6 +149,10 @@ final class AppSettings {
         didSet { defaults.set(googleCatalog, forKey: Keys.catalog(.google)) }
     }
 
+    var localOpenAICatalog: [String] = [] {
+        didSet { defaults.set(localOpenAICatalog, forKey: Keys.catalog(.localOpenAI)) }
+    }
+
     var mistralCatalog: [String] = [] {
         didSet { defaults.set(mistralCatalog, forKey: Keys.catalog(.mistral)) }
     }
@@ -138,29 +175,31 @@ final class AppSettings {
 
     func catalog(for provider: ProviderID) -> [String] {
         switch provider {
-        case .anthropic: return anthropicCatalog
-        case .apple:     return []
-        case .deepseek:  return deepseekCatalog
-        case .google:    return googleCatalog
-        case .mistral:   return mistralCatalog
-        case .ollama:    return ollamaCatalog
-        case .openai:    return openaiCatalog
-        case .qwen:      return qwenCatalog
-        case .zai:       return zaiCatalog
+        case .anthropic:    return anthropicCatalog
+        case .apple:        return []
+        case .deepseek:     return deepseekCatalog
+        case .google:       return googleCatalog
+        case .localOpenAI:  return localOpenAICatalog
+        case .mistral:      return mistralCatalog
+        case .ollama:       return ollamaCatalog
+        case .openai:       return openaiCatalog
+        case .qwen:         return qwenCatalog
+        case .zai:          return zaiCatalog
         }
     }
 
     func setCatalog(_ ids: [String], for provider: ProviderID) {
         switch provider {
-        case .anthropic: anthropicCatalog = ids
-        case .apple:     break
-        case .deepseek:  deepseekCatalog = ids
-        case .google:    googleCatalog = ids
-        case .mistral:   mistralCatalog = ids
-        case .ollama:    ollamaCatalog = ids
-        case .openai:    openaiCatalog = ids
-        case .qwen:      qwenCatalog = ids
-        case .zai:       zaiCatalog = ids
+        case .anthropic:    anthropicCatalog = ids
+        case .apple:        break
+        case .deepseek:     deepseekCatalog = ids
+        case .google:       googleCatalog = ids
+        case .localOpenAI:  localOpenAICatalog = ids
+        case .mistral:      mistralCatalog = ids
+        case .ollama:       ollamaCatalog = ids
+        case .openai:       openaiCatalog = ids
+        case .qwen:         qwenCatalog = ids
+        case .zai:          zaiCatalog = ids
         }
         // Prune previously-enabled models that no longer exist in the
         // catalog (the provider deprecated them, the user changed account,
@@ -187,6 +226,10 @@ final class AppSettings {
         didSet { defaults.set(Array(enabledGoogleModels), forKey: Keys.enabledModels(for: .google)) }
     }
 
+    var enabledLocalOpenAIModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledLocalOpenAIModels), forKey: Keys.enabledModels(for: .localOpenAI)) }
+    }
+
     var enabledMistralModels: Set<String> = [] {
         didSet { defaults.set(Array(enabledMistralModels), forKey: Keys.enabledModels(for: .mistral)) }
     }
@@ -209,15 +252,16 @@ final class AppSettings {
 
     func enabledModels(for provider: ProviderID) -> Set<String> {
         switch provider {
-        case .anthropic: return enabledAnthropicModels
-        case .apple:     return []
-        case .deepseek:  return enabledDeepSeekModels
-        case .google:    return enabledGoogleModels
-        case .mistral:   return enabledMistralModels
-        case .ollama:    return enabledOllamaModels
-        case .openai:    return enabledOpenAIModels
-        case .qwen:      return enabledQwenModels
-        case .zai:       return enabledZAIModels
+        case .anthropic:    return enabledAnthropicModels
+        case .apple:        return []
+        case .deepseek:     return enabledDeepSeekModels
+        case .google:       return enabledGoogleModels
+        case .localOpenAI:  return enabledLocalOpenAIModels
+        case .mistral:      return enabledMistralModels
+        case .ollama:       return enabledOllamaModels
+        case .openai:       return enabledOpenAIModels
+        case .qwen:         return enabledQwenModels
+        case .zai:          return enabledZAIModels
         }
     }
 
@@ -234,6 +278,9 @@ final class AppSettings {
         case .google:
             if enabled { enabledGoogleModels.insert(modelID) } else { enabledGoogleModels.remove(modelID) }
             constrainActive(&googleModel, to: enabledGoogleModels)
+        case .localOpenAI:
+            if enabled { enabledLocalOpenAIModels.insert(modelID) } else { enabledLocalOpenAIModels.remove(modelID) }
+            constrainActive(&localOpenAIModel, to: enabledLocalOpenAIModels)
         case .mistral:
             if enabled { enabledMistralModels.insert(modelID) } else { enabledMistralModels.remove(modelID) }
             constrainActive(&mistralModel, to: enabledMistralModels)
@@ -330,6 +377,9 @@ final class AppSettings {
         self.deepseekModel = defaults.string(forKey: Keys.deepseekModel)
         self.googleAPIKey = KeychainStore.get(account: KeychainAccounts.googleAPIKey) ?? ""
         self.googleModel = defaults.string(forKey: Keys.googleModel)
+        self.localOpenAIBaseURLString = defaults.string(forKey: Keys.localOpenAIBaseURL) ?? ""
+        self.localOpenAIAPIKey = KeychainStore.get(account: KeychainAccounts.localOpenAIAPIKey) ?? ""
+        self.localOpenAIModel = defaults.string(forKey: Keys.localOpenAIModel)
         self.mistralAPIKey = KeychainStore.get(account: KeychainAccounts.mistralAPIKey) ?? ""
         self.mistralModel = defaults.string(forKey: Keys.mistralModel)
         self.serverURLString = defaults.string(forKey: Keys.serverURL) ?? "http://localhost:11434"
@@ -343,6 +393,7 @@ final class AppSettings {
         self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
         self.googleCatalog = defaults.array(forKey: Keys.catalog(.google)) as? [String] ?? []
+        self.localOpenAICatalog = defaults.array(forKey: Keys.catalog(.localOpenAI)) as? [String] ?? []
         self.mistralCatalog = defaults.array(forKey: Keys.catalog(.mistral)) as? [String] ?? []
         self.ollamaCatalog = defaults.array(forKey: Keys.catalog(.ollama)) as? [String] ?? []
         self.openaiCatalog = defaults.array(forKey: Keys.catalog(.openai)) as? [String] ?? []
@@ -351,6 +402,7 @@ final class AppSettings {
         self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
         self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
+        self.enabledLocalOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .localOpenAI)) as? [String] ?? [])
         self.enabledMistralModels = Set(defaults.array(forKey: Keys.enabledModels(for: .mistral)) as? [String] ?? [])
         self.enabledOllamaModels = Set(defaults.array(forKey: Keys.enabledModels(for: .ollama)) as? [String] ?? [])
         self.enabledOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .openai)) as? [String] ?? [])
@@ -372,6 +424,8 @@ final class AppSettings {
         static let anthropicModel = "anthropic.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
         static let googleModel = "google.selectedModel"
+        static let localOpenAIBaseURL = "localOpenAI.baseURL"
+        static let localOpenAIModel = "localOpenAI.selectedModel"
         static let mistralModel = "mistral.selectedModel"
         static let openaiModel = "openai.selectedModel"
         static let qwenModel = "qwen.selectedModel"
@@ -394,6 +448,7 @@ final class AppSettings {
         static let anthropicAPIKey = "anthropic.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
         static let googleAPIKey = "google.apiKey"
+        static let localOpenAIAPIKey = "localOpenAI.apiKey"
         static let mistralAPIKey = "mistral.apiKey"
         static let openaiAPIKey = "openai.apiKey"
         static let qwenAPIKey = "qwen.apiKey"

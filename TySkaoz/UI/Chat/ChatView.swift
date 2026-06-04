@@ -63,6 +63,7 @@ struct ChatView: View {
         case "anthropic": return settings.anthropicModel
         case "deepseek":  return settings.deepseekModel
         case "google":    return settings.googleModel
+        case "localOpenAI": return settings.localOpenAIModel
         case "mistral":   return settings.mistralModel
         case "ollama":    return settings.selectedModel
         case "openai":    return settings.openaiModel
@@ -211,6 +212,7 @@ struct ChatView: View {
             case "apple":     return "Apple Intelligence indisponible — voir les réglages."
             case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
             case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
+            case "localOpenAI": return "Configurez l'URL de votre serveur (vLLM, LM Studio, llama.cpp) et choisissez un modèle…"
             case "mistral":   return "Renseignez votre clé Mistral et choisissez un modèle…"
             case "ollama":    return "Configurez Ollama (serveur + modèle) dans les réglages…"
             case "openai":    return "Renseignez votre clé OpenAI et choisissez un modèle…"

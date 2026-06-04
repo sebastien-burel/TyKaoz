@@ -33,6 +33,7 @@ struct SettingsPanelView: View {
         case .provider(.apple):     AppleSettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
         case .provider(.google):    GoogleSettingsView()
+        case .provider(.localOpenAI): LocalOpenAISettingsView()
         case .provider(.mistral):   MistralSettingsView()
         case .provider(.ollama):    OllamaSettingsView()
         case .provider(.openai):    OpenAISettingsView()
@@ -171,6 +172,9 @@ private struct ProvidersSidebar: View {
         case .google:
             return (!settings.googleAPIKey.isEmpty && settings.googleModel?.isEmpty == false)
                 ? .green : .gray
+        case .localOpenAI:
+            return (settings.localOpenAIBaseURL != nil && settings.localOpenAIModel?.isEmpty == false)
+                ? .green : .gray
         case .mistral:
             return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
                 ? .green : .gray
@@ -197,6 +201,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case apple
     case deepseek
     case google
+    case localOpenAI
     case mistral
     case ollama
     case openai
@@ -207,30 +212,32 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
 
     init?(_ raw: String) {
         switch raw {
-        case "anthropic": self = .anthropic
-        case "apple":     self = .apple
-        case "deepseek":  self = .deepseek
-        case "google":    self = .google
-        case "mistral":   self = .mistral
-        case "ollama":    self = .ollama
-        case "openai":    self = .openai
-        case "qwen":      self = .qwen
-        case "zai":       self = .zai
-        default:          return nil
+        case "anthropic":   self = .anthropic
+        case "apple":       self = .apple
+        case "deepseek":    self = .deepseek
+        case "google":      self = .google
+        case "localOpenAI": self = .localOpenAI
+        case "mistral":     self = .mistral
+        case "ollama":      self = .ollama
+        case "openai":      self = .openai
+        case "qwen":        self = .qwen
+        case "zai":         self = .zai
+        default:            return nil
         }
     }
 
     var displayName: String {
         switch self {
-        case .anthropic: return "Anthropic"
-        case .apple:     return "Apple Intelligence"
-        case .deepseek:  return "DeepSeek"
-        case .google:    return "Google Gemini"
-        case .mistral:   return "Mistral"
-        case .ollama:    return "Ollama"
-        case .openai:    return "OpenAI"
-        case .qwen:      return "Qwen Cloud"
-        case .zai:       return "z.ai"
+        case .anthropic:    return "Anthropic"
+        case .apple:        return "Apple Intelligence"
+        case .deepseek:     return "DeepSeek"
+        case .google:       return "Google Gemini"
+        case .localOpenAI:  return "Local OpenAI"
+        case .mistral:      return "Mistral"
+        case .ollama:       return "Ollama"
+        case .openai:       return "OpenAI"
+        case .qwen:         return "Qwen Cloud"
+        case .zai:          return "z.ai"
         }
     }
 }
