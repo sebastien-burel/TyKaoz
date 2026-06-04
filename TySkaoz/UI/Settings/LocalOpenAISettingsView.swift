@@ -70,13 +70,15 @@ struct LocalOpenAISettingsView: View {
     }
 
     private func test() async {
-        guard let url = settings.localOpenAIBaseURL else {
+        guard let raw = settings.localOpenAIBaseURL else {
             state = .failure(message: "URL invalide.")
             return
         }
         state = .loading
+        // Same normalisation the provider applies — keeps the
+        // "Tester" button and chat path in sync.
         let client = OpenAICompatibleClient(
-            baseURL: url,
+            baseURL: LocalOpenAIProvider.normalize(raw),
             apiKey: settings.localOpenAIAPIKey
         )
         do {
