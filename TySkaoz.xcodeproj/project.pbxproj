@@ -8,6 +8,17 @@
 
 /* Begin PBXBuildFile section */
 		326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 326262872FC455B3001B46C0 /* MarkdownUI */; };
+		32B9B9192FD28D96007412B7 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9182FD28D96007412B7 /* MLX */; };
+		32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B91A2FD28D96007412B7 /* MLXFast */; };
+		32B9B91D2FD28D96007412B7 /* MLXLinalg in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B91C2FD28D96007412B7 /* MLXLinalg */; };
+		32B9B91F2FD28D96007412B7 /* MLXNN in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B91E2FD28D96007412B7 /* MLXNN */; };
+		32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9202FD28D96007412B7 /* MLXRandom */; };
+		32B9B9242FD28DE8007412B7 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9232FD28DE8007412B7 /* MLXEmbedders */; };
+		32B9B9262FD28DE8007412B7 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9252FD28DE8007412B7 /* MLXLLM */; };
+		32B9B9282FD28DE8007412B7 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9272FD28DE8007412B7 /* MLXLMCommon */; };
+		32B9B92D2FD29145007412B7 /* MLXHuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92C2FD29145007412B7 /* MLXHuggingFace */; };
+		32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92F2FD29174007412B7 /* HuggingFace */; };
+		32B9B9332FD2919E007412B7 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9322FD2919E007412B7 /* Tokenizers */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -57,8 +68,19 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				32B9B9282FD28DE8007412B7 /* MLXLMCommon in Frameworks */,
+				32B9B9262FD28DE8007412B7 /* MLXLLM in Frameworks */,
+				32B9B9242FD28DE8007412B7 /* MLXEmbedders in Frameworks */,
+				32B9B9332FD2919E007412B7 /* Tokenizers in Frameworks */,
+				32B9B91F2FD28D96007412B7 /* MLXNN in Frameworks */,
+				32B9B92D2FD29145007412B7 /* MLXHuggingFace in Frameworks */,
+				32B9B91D2FD28D96007412B7 /* MLXLinalg in Frameworks */,
+				32B9B9192FD28D96007412B7 /* MLX in Frameworks */,
 				326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */,
+				32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */,
 				7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */,
+				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
+				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,12 +101,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		32B9B92B2FD29145007412B7 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		32DEB1FD2FC2F85500BA1D98 = {
 			isa = PBXGroup;
 			children = (
 				32DEB2082FC2F85500BA1D98 /* TySkaoz */,
 				32DEB2162FC2F85600BA1D98 /* TySkaozTests */,
 				32DEB2202FC2F85600BA1D98 /* TySkaozUITests */,
+				32B9B92B2FD29145007412B7 /* Frameworks */,
 				32DEB2072FC2F85500BA1D98 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -121,6 +151,17 @@
 			packageProductDependencies = (
 				326262872FC455B3001B46C0 /* MarkdownUI */,
 				7DA1B2C3D4E5F60708090002 /* GRDB */,
+				32B9B9182FD28D96007412B7 /* MLX */,
+				32B9B91A2FD28D96007412B7 /* MLXFast */,
+				32B9B91C2FD28D96007412B7 /* MLXLinalg */,
+				32B9B91E2FD28D96007412B7 /* MLXNN */,
+				32B9B9202FD28D96007412B7 /* MLXRandom */,
+				32B9B9232FD28DE8007412B7 /* MLXEmbedders */,
+				32B9B9252FD28DE8007412B7 /* MLXLLM */,
+				32B9B9272FD28DE8007412B7 /* MLXLMCommon */,
+				32B9B92C2FD29145007412B7 /* MLXHuggingFace */,
+				32B9B92F2FD29174007412B7 /* HuggingFace */,
+				32B9B9322FD2919E007412B7 /* Tokenizers */,
 			);
 			productName = TySkaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TySkaoz.app */;
@@ -207,6 +248,10 @@
 			packageReferences = (
 				326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */,
+				32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */,
+				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -672,6 +717,38 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.31.4;
+			};
+		};
+		32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.31.3;
+			};
+		};
+		32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-huggingface";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
+		32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.3;
+			};
+		};
 		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
@@ -687,6 +764,61 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		32B9B9182FD28D96007412B7 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLX;
+		};
+		32B9B91A2FD28D96007412B7 /* MLXFast */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLXFast;
+		};
+		32B9B91C2FD28D96007412B7 /* MLXLinalg */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLXLinalg;
+		};
+		32B9B91E2FD28D96007412B7 /* MLXNN */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLXNN;
+		};
+		32B9B9202FD28D96007412B7 /* MLXRandom */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9172FD28D96007412B7 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLXRandom;
+		};
+		32B9B9232FD28DE8007412B7 /* MLXEmbedders */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXEmbedders;
+		};
+		32B9B9252FD28DE8007412B7 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
+		};
+		32B9B9272FD28DE8007412B7 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		32B9B92C2FD29145007412B7 /* MLXHuggingFace */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXHuggingFace;
+		};
+		32B9B92F2FD29174007412B7 /* HuggingFace */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */;
+			productName = HuggingFace;
+		};
+		32B9B9322FD2919E007412B7 /* Tokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Tokenizers;
 		};
 		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
