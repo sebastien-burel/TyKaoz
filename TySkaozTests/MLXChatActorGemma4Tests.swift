@@ -46,6 +46,28 @@ struct MLXChatActorGemma4Tests {
         #expect(MLXChatActor.parseGemma4PayloadForTests("call:foo{key:value") == nil)
     }
 
+    /// The model's second-format envelope: pseudo-JSON with
+    /// malformed keys + escape-wrapped string values. Repro from
+    /// a real chat session that triggered `brave_web_search`.
+    @Test
+    func parsesJSONStyleWithMalformedKey() throws {
+        let raw = #"{"name":"brave_web_search","arguments":{"q:<|"|>composition chimique du sucre types et effets sur la santé<|"|>}}"#
+        let parsed = try #require(MLXChatActor.parseGemma4PayloadForTests(raw))
+        #expect(parsed.name == "brave_web_search")
+        let dict = try jsonDict(parsed.argumentsJSON)
+        #expect(dict["q"] as? String == "composition chimique du sucre types et effets sur la santé")
+    }
+
+    @Test
+    func parsesJSONStyleWithMultipleEscapedArgs() throws {
+        let raw = #"{"name":"write_wiki_page","arguments":{"path:<|"|>note.md<|"|>,"content:<|"|>Hello, world<|"|>}}"#
+        let parsed = try #require(MLXChatActor.parseGemma4PayloadForTests(raw))
+        #expect(parsed.name == "write_wiki_page")
+        let dict = try jsonDict(parsed.argumentsJSON)
+        #expect(dict["path"] as? String == "note.md")
+        #expect(dict["content"] as? String == "Hello, world")
+    }
+
     // MARK: - Helpers
 
     private func jsonDict(_ json: String) throws -> [String: Any] {

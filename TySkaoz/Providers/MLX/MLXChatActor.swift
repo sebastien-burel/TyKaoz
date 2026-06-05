@@ -275,21 +275,33 @@ actor MLXChatActor {
         inCall: inout Bool,
         continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
     ) {
-        let openMarker = "<|tool_call>"
+        // Gemma 4 emits at least two open markers in practice:
+        // - `<|tool_call>` paired with the gemma envelope (`call:n{...}`)
+        // - `<tool_call>` paired with a malformed-JSON envelope
+        //   (`{"name":"…","arguments":{"k:<|"|>v<|"|>}}`).
+        // Both close with `<tool_call|>` (pipe before `>`), which
+        // makes the close marker our reliable demarcator.
+        let openMarkers = ["<|tool_call>", "<tool_call>"]
         let closeMarker = "<tool_call|>"
         buffer += text
 
         // Process the buffer repeatedly until no transition is
         // possible (handles edge cases like multiple tool calls or
         // a tool call sandwiched between text in one chunk).
+        // Used for the "safe tail to hold back" math.
+        let maxOpenLen = openMarkers.map(\.count).max() ?? 0
+
         while true {
             if inCall {
                 guard let closeRange = buffer.range(of: closeMarker) else {
-                    // No close yet — keep buffering.
                     return
                 }
-                let openLen = openMarker.count
-                let payloadStart = buffer.index(buffer.startIndex, offsetBy: openLen)
+                // Strip whichever open marker is at the buffer start.
+                var payloadStart = buffer.startIndex
+                for marker in openMarkers where buffer.hasPrefix(marker) {
+                    payloadStart = buffer.index(buffer.startIndex, offsetBy: marker.count)
+                    break
+                }
                 let payload = String(buffer[payloadStart..<closeRange.lowerBound])
                 if let parsed = parseGemma4Payload(payload) {
                     continuation.yield(.toolCall(
@@ -298,30 +310,34 @@ actor MLXChatActor {
                         argumentsJSON: parsed.argumentsJSON
                     ))
                 } else {
-                    // Unparseable — emit the raw span as text so
-                    // nothing is silently swallowed.
                     let raw = String(buffer[..<closeRange.upperBound])
                     continuation.yield(.textDelta(raw))
                 }
                 buffer = String(buffer[closeRange.upperBound...])
                 inCall = false
-                // Loop again — there may be more content after the
-                // close marker (text or another tool call).
             } else {
-                if let openRange = buffer.range(of: openMarker) {
-                    // Emit text before the open marker.
+                // Pick the earliest open marker in the buffer.
+                var earliest: (Range<String.Index>, String)? = nil
+                for marker in openMarkers {
+                    if let range = buffer.range(of: marker) {
+                        if earliest == nil || range.lowerBound < earliest!.0.lowerBound {
+                            earliest = (range, marker)
+                        }
+                    }
+                }
+                if let (openRange, _) = earliest {
                     let prefix = String(buffer[..<openRange.lowerBound])
                     if !prefix.isEmpty {
                         continuation.yield(.textDelta(prefix))
                     }
                     buffer = String(buffer[openRange.lowerBound...])
                     inCall = true
-                    // Loop to check if the close is already there too.
                 } else {
-                    // No open marker. Emit text except a small tail
-                    // that could still be a partial open marker.
-                    if buffer.count > openMarker.count {
-                        let safeEnd = buffer.index(buffer.endIndex, offsetBy: -openMarker.count)
+                    // Hold back the longest possible open-marker
+                    // suffix so a split-across-chunks marker isn't
+                    // missed.
+                    if buffer.count > maxOpenLen {
+                        let safeEnd = buffer.index(buffer.endIndex, offsetBy: -maxOpenLen)
                         let safe = String(buffer[..<safeEnd])
                         if !safe.isEmpty {
                             continuation.yield(.textDelta(safe))
@@ -340,10 +356,19 @@ actor MLXChatActor {
         parseGemma4Payload(payload)
     }
 
-    /// Parses a Gemma 4 call payload like `call:search_wiki{query:
-    /// <|"|>sucre<|"|>}` into `(name, argumentsJSON)`. Returns nil
-    /// if the shape isn't recognised; caller falls back to raw text.
+    /// Parses a Gemma 4 call payload. Tries the canonical
+    /// `call:name{...}` shape first, then the malformed-JSON shape
+    /// the model sometimes emits: `{"name":"…","arguments":{"k:<|"|>
+    /// v<|"|>}}` (note the missing closing quote on keys + the
+    /// `<|"|>` escape marker for string values).
     private static func parseGemma4Payload(_ payload: String) -> (name: String, argumentsJSON: String)? {
+        if let result = parseGemma4CallStyle(payload) { return result }
+        if let result = parseGemma4JSONStyle(payload) { return result }
+        return nil
+    }
+
+    /// Canonical Gemma 4 shape: `call:name{key:value, key:<|"|>str<|"|>}`.
+    private static func parseGemma4CallStyle(_ payload: String) -> (name: String, argumentsJSON: String)? {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("call:") else { return nil }
         let afterCall = trimmed.dropFirst("call:".count)
@@ -406,6 +431,66 @@ actor MLXChatActor {
               let json = String(data: data, encoding: .utf8)
         else { return nil }
         return (name, json)
+    }
+
+    /// JSON-ish shape Gemma 4 sometimes emits:
+    ///   `{"name":"foo","arguments":{"k:<|"|>v<|"|>,"k2":42}}`
+    /// Notable malformations the model produces in this mode:
+    /// - Keys lose their closing quote before `:` (e.g. `"k:` not `"k":`).
+    /// - String values are wrapped in `<|"|>…<|"|>` instead of `"…"`.
+    /// We patch both back into valid JSON, then parse normally.
+    private static func parseGemma4JSONStyle(_ payload: String) -> (name: String, argumentsJSON: String)? {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("\"name\"") else { return nil }
+
+        // Step 1: replace `<|"|>X<|"|>` with `"X"`, JSON-escaping
+        // backslashes and quotes inside X so they don't break the
+        // resulting JSON. Done with a hand-walk because the marker
+        // contains characters that complicate Regex.
+        var fixed = ""
+        var rest = trimmed[...]
+        let escape = "<|\"|>"
+        while let open = rest.range(of: escape) {
+            fixed.append(contentsOf: rest[..<open.lowerBound])
+            let afterOpen = rest[open.upperBound...]
+            guard let close = afterOpen.range(of: escape) else {
+                // Unterminated escape — give up.
+                return nil
+            }
+            let raw = String(afterOpen[..<close.lowerBound])
+            let escaped = raw
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\t", with: "\\t")
+            fixed.append("\"")
+            fixed.append(escaped)
+            fixed.append("\"")
+            rest = afterOpen[close.upperBound...]
+        }
+        fixed.append(contentsOf: rest)
+
+        // Step 2: fix keys that look like `"q:` (no closing quote
+        // before the colon). Insert it.
+        // Pattern: `"`, then word chars, then `:` not preceded by `"`.
+        let keyFixRegex = #/"([A-Za-z_][A-Za-z0-9_]*):/#
+        fixed = fixed.replacing(keyFixRegex) { match in
+            "\"\(match.output.1)\":"
+        }
+
+        // Step 3: parse as JSON.
+        guard let data = fixed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let name = object["name"] as? String,
+              !name.isEmpty,
+              let arguments = object["arguments"] as? [String: Any]
+        else { return nil }
+
+        guard let argsData = try? JSONSerialization.data(withJSONObject: arguments),
+              let argsJSON = String(data: argsData, encoding: .utf8)
+        else { return nil }
+        return (name, argsJSON)
     }
 
     /// Wraps a TyKaoz `ToolSpec` in the OpenAI-style schema dict
