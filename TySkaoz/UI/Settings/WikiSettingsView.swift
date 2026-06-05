@@ -38,6 +38,24 @@ struct WikiSettingsView: View {
                         Text("MLX (in-process)").tag("mlx")
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: settings.wikiEmbeddingProviderID) { _, newValue in
+                        // Each runtime has its own canonical model
+                        // ID + dimension. The text field & stepper
+                        // below stay editable, but switching the
+                        // picker resets them to known-good values
+                        // so the user doesn't ship `nomic-embed-text`
+                        // (Ollama tag) into an HF-bound MLX path.
+                        let defaults = WikiManager.EmbedderDefaults.forProvider(newValue)
+                        settings.wikiEmbeddingModelID = defaults.modelID
+                        if settings.wikiEmbeddingDimension != defaults.dimension {
+                            Task {
+                                rebuilding = true
+                                settings.wikiEmbeddingDimension = defaults.dimension
+                                await wiki.rebuildIndex(settings: settings)
+                                rebuilding = false
+                            }
+                        }
+                    }
 
                     Text("""
                     Ollama / Local OpenAI réutilisent l'URL du provider \
@@ -48,6 +66,8 @@ struct WikiSettingsView: View {
                     """)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)
+
+                    embedderLoadRow
                 }
 
                 Section("Modèle d'embedding") {
@@ -129,6 +149,30 @@ struct WikiSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private var embedderLoadRow: some View {
+        switch wiki.embedderLoadState {
+        case .idle, .ready:
+            EmptyView()
+        case .downloading(let progress):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Téléchargement du modèle… \(Int(progress * 100)) %",
+                      systemImage: "arrow.down.circle")
+                    .font(Brand.Fonts.body(12))
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+            }
+        case .loading:
+            Label("Chargement en mémoire…", systemImage: "cpu")
+                .font(Brand.Fonts.body(12))
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .font(Brand.Fonts.body(12))
+                .lineLimit(4)
+        }
     }
 
     @ViewBuilder

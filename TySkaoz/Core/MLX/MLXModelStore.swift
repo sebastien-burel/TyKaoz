@@ -21,7 +21,7 @@ final class MLXModelStore {
 
     enum Failure: LocalizedError {
         case insufficientDiskSpace(needed: Int64, available: Int64)
-        case downloadFailed(underlying: Error)
+        case downloadFailed(modelID: String, underlying: Error)
 
         var errorDescription: String? {
             switch self {
@@ -29,8 +29,13 @@ final class MLXModelStore {
                 let need = ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)
                 let have = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
                 return "Pas assez d'espace disque (besoin : \(need), dispo : \(have))."
-            case .downloadFailed(let err):
-                return "Échec du téléchargement : \(err.localizedDescription)"
+            case .downloadFailed(let modelID, let err):
+                return """
+                Échec du téléchargement de « \(modelID) » : \
+                \(err.localizedDescription). Vérifie que le slug est \
+                un repo HuggingFace valide (ex : \
+                `mlx-community/bge-m3-mlx-4bit`).
+                """
             }
         }
     }
@@ -133,11 +138,12 @@ final class MLXModelStore {
                 }
             }
         } catch {
-            throw Failure.downloadFailed(underlying: error)
+            throw Failure.downloadFailed(modelID: modelID, underlying: error)
         }
 
         guard let dir = localDirectory(modelID: modelID) else {
             throw Failure.downloadFailed(
+                modelID: modelID,
                 underlying: NSError(
                     domain: "MLXModelStore",
                     code: 0,

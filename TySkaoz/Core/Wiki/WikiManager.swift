@@ -17,7 +17,43 @@ final class WikiManager {
         }
     }
 
+    /// Where the configured embedder is in its life-cycle. Only
+    /// meaningful for providers that require a heavy load (MLX
+    /// downloads + memory-maps weights); network-only providers
+    /// (Ollama, Local OpenAI) sit at `.ready` immediately.
+    enum EmbedderLoadState: Equatable {
+        case idle               // no embedder configured, or not started yet
+        case downloading(progress: Double)  // 0.0…1.0
+        case loading            // model on disk, mmap'ing into Metal
+        case ready
+        case failed(message: String)
+    }
+
+    /// Recommended defaults for each embedder runtime. The wiki
+    /// settings UI uses these to auto-fill the model ID / dimension
+    /// when the user switches the picker — saves the "did you
+    /// remember to also change the model name?" trap.
+    struct EmbedderDefaults {
+        let modelID: String
+        let dimension: Int
+
+        static func forProvider(_ providerID: String) -> EmbedderDefaults {
+            switch providerID {
+            case "mlx":
+                return .init(modelID: "mlx-community/bge-m3-mlx-4bit", dimension: 1024)
+            case "ollama":
+                return .init(modelID: "nomic-embed-text", dimension: 768)
+            case "localOpenAI":
+                return .init(modelID: "BAAI/bge-m3", dimension: 1024)
+            default:
+                return .init(modelID: "nomic-embed-text", dimension: 768)
+            }
+        }
+    }
+
     private(set) var state: State = .disabled
+    private(set) var embedderLoadState: EmbedderLoadState = .idle
+    @ObservationIgnored private var preloadTask: Task<Void, Never>?
     /// Snapshot of the embedder config the current context was built
     /// with. `reconcile()` rebuilds when these drift.
     private(set) var activeProviderID: String?
@@ -104,11 +140,55 @@ final class WikiManager {
             self.activeProviderID = providerID
             self.activeEmbedderURL = embedderURL
             self.activeModelID = settings.wikiEmbeddingModelID
+            self.startEmbedderPreload(providerID: providerID, modelID: settings.wikiEmbeddingModelID)
         } catch {
             state = .failed(message: error.localizedDescription)
             activeProviderID = nil
             activeEmbedderURL = nil
             activeModelID = nil
+            embedderLoadState = .failed(message: error.localizedDescription)
+        }
+    }
+
+    /// For network providers (Ollama, Local OpenAI) the embedder is
+    /// always ready — no warm-up needed. For MLX we kick off a
+    /// background download/load so the first `embed()` call doesn't
+    /// have to wait, and so the settings UI can show progress.
+    private func startEmbedderPreload(providerID: String, modelID: String) {
+        preloadTask?.cancel()
+        guard providerID == "mlx" else {
+            embedderLoadState = .ready
+            return
+        }
+        embedderLoadState = .downloading(progress: 0)
+        preloadTask = Task { [weak self] in
+            do {
+                _ = try await MLXModelStore.shared.download(modelID: modelID) { @MainActor progress in
+                    self?.embedderLoadState = .downloading(progress: progress)
+                }
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    self?.embedderLoadState = .loading
+                }
+                // The actor will load the model on its first embed.
+                // Trigger a no-op embed to warm the Metal queue
+                // (and reveal any architecture-mismatch failures
+                // upfront rather than in the middle of a search).
+                let actor = await MLXEmbeddingActor.shared(for: modelID)
+                _ = try await actor.embed([" "])
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    self?.embedderLoadState = .ready
+                }
+            } catch is CancellationError {
+                // Reconciled away before we finished — silent.
+            } catch {
+                await MainActor.run {
+                    self?.embedderLoadState = .failed(
+                        message: "Erreur MLX (\(modelID)) : \(error.localizedDescription)"
+                    )
+                }
+            }
         }
     }
 
@@ -199,5 +279,8 @@ final class WikiManager {
     private func tearDown() {
         watcher?.stop()
         watcher = nil
+        preloadTask?.cancel()
+        preloadTask = nil
+        embedderLoadState = .idle
     }
 }
