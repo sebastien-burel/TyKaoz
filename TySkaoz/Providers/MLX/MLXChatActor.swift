@@ -79,11 +79,32 @@ actor MLXChatActor {
                         input: lmInput,
                         parameters: params
                     )
+                    // Stateful intercept layer for Gemma 4. MLX's
+                    // GemmaFunctionParser targets the Gemma 3
+                    // tokens (`<start_function_call>`,
+                    // `<end_function_call>`, `<escape>`); Gemma 4
+                    // ships different ones (`<|tool_call>`,
+                    // `<tool_call|>`, `<|"|>`). Until mlx-swift-lm
+                    // catches up we splice in a tiny parser.
+                    let needsGemma4 = modelID.localizedCaseInsensitiveContains("gemma-4")
+                        || modelID.localizedCaseInsensitiveContains("gemma4")
+                    var gemma4Buffer = ""
+                    var inGemma4Call = false
+
                     for await event in stream {
                         if Task.isCancelled { break }
                         switch event {
                         case .chunk(let text):
-                            continuation.yield(.textDelta(text))
+                            if needsGemma4 {
+                                Self.processGemma4Chunk(
+                                    text,
+                                    buffer: &gemma4Buffer,
+                                    inCall: &inGemma4Call,
+                                    continuation: continuation
+                                )
+                            } else {
+                                continuation.yield(.textDelta(text))
+                            }
                         case .toolCall(let call):
                             // MLX `ToolCall` has no id; synthesise
                             // one so TyKaoz's ChatSession can route
@@ -105,6 +126,13 @@ actor MLXChatActor {
                             // not surfaced upstream yet.
                             break
                         }
+                    }
+                    if needsGemma4, !gemma4Buffer.isEmpty {
+                        // Flush whatever remains: either a leftover
+                        // half-marker that turned out to be literal
+                        // text, or a malformed tool call. Emit as
+                        // text so we don't swallow content.
+                        continuation.yield(.textDelta(gemma4Buffer))
                     }
                     lastUsedAt = Date()
                     scheduleIdleUnload()
@@ -226,6 +254,158 @@ actor MLXChatActor {
                 return .tool(msg.content)
             }
         }
+    }
+
+    /// Streaming-aware Gemma 4 tool-call detector. MLX's built-in
+    /// `GemmaFunctionParser` targets Gemma 3's tokens; this routine
+    /// catches the Gemma 4 envelope (`<|tool_call>call:NAME{ARGS}
+    /// <tool_call|>` with `<|"|>STR<|"|>` for strings) and emits
+    /// `.toolCall` events alongside the surrounding text.
+    ///
+    /// Invariants:
+    /// - When `inCall == false`, `buffer` holds only the tail of
+    ///   the stream that might still be a partial open marker.
+    ///   Everything safely past it is already emitted as `.textDelta`.
+    /// - When `inCall == true`, `buffer` holds the entire span from
+    ///   the open marker forward, waiting for the close marker so
+    ///   the payload can be parsed atomically.
+    private static func processGemma4Chunk(
+        _ text: String,
+        buffer: inout String,
+        inCall: inout Bool,
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) {
+        let openMarker = "<|tool_call>"
+        let closeMarker = "<tool_call|>"
+        buffer += text
+
+        // Process the buffer repeatedly until no transition is
+        // possible (handles edge cases like multiple tool calls or
+        // a tool call sandwiched between text in one chunk).
+        while true {
+            if inCall {
+                guard let closeRange = buffer.range(of: closeMarker) else {
+                    // No close yet — keep buffering.
+                    return
+                }
+                let openLen = openMarker.count
+                let payloadStart = buffer.index(buffer.startIndex, offsetBy: openLen)
+                let payload = String(buffer[payloadStart..<closeRange.lowerBound])
+                if let parsed = parseGemma4Payload(payload) {
+                    continuation.yield(.toolCall(
+                        id: "mlx-" + UUID().uuidString.prefix(8).lowercased(),
+                        name: parsed.name,
+                        argumentsJSON: parsed.argumentsJSON
+                    ))
+                } else {
+                    // Unparseable — emit the raw span as text so
+                    // nothing is silently swallowed.
+                    let raw = String(buffer[..<closeRange.upperBound])
+                    continuation.yield(.textDelta(raw))
+                }
+                buffer = String(buffer[closeRange.upperBound...])
+                inCall = false
+                // Loop again — there may be more content after the
+                // close marker (text or another tool call).
+            } else {
+                if let openRange = buffer.range(of: openMarker) {
+                    // Emit text before the open marker.
+                    let prefix = String(buffer[..<openRange.lowerBound])
+                    if !prefix.isEmpty {
+                        continuation.yield(.textDelta(prefix))
+                    }
+                    buffer = String(buffer[openRange.lowerBound...])
+                    inCall = true
+                    // Loop to check if the close is already there too.
+                } else {
+                    // No open marker. Emit text except a small tail
+                    // that could still be a partial open marker.
+                    if buffer.count > openMarker.count {
+                        let safeEnd = buffer.index(buffer.endIndex, offsetBy: -openMarker.count)
+                        let safe = String(buffer[..<safeEnd])
+                        if !safe.isEmpty {
+                            continuation.yield(.textDelta(safe))
+                        }
+                        buffer = String(buffer[safeEnd...])
+                    }
+                    return
+                }
+            }
+        }
+    }
+
+    /// Test-only re-export so unit tests can hit the parser
+    /// without going through the full streaming loop.
+    static func parseGemma4PayloadForTests(_ payload: String) -> (name: String, argumentsJSON: String)? {
+        parseGemma4Payload(payload)
+    }
+
+    /// Parses a Gemma 4 call payload like `call:search_wiki{query:
+    /// <|"|>sucre<|"|>}` into `(name, argumentsJSON)`. Returns nil
+    /// if the shape isn't recognised; caller falls back to raw text.
+    private static func parseGemma4Payload(_ payload: String) -> (name: String, argumentsJSON: String)? {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("call:") else { return nil }
+        let afterCall = trimmed.dropFirst("call:".count)
+        guard let openBrace = afterCall.firstIndex(of: "{"),
+              let closeBrace = afterCall.lastIndex(of: "}"),
+              closeBrace > openBrace
+        else { return nil }
+
+        let name = String(afterCall[..<openBrace])
+            .trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return nil }
+
+        let argsBody = String(afterCall[afterCall.index(after: openBrace)..<closeBrace])
+        let escape = "<|\"|>"
+
+        // Tokenise the args body into "key:value" segments. Strings
+        // are wrapped in the `<|"|>` escape marker and may contain
+        // commas, so we can't naively split on commas.
+        var args: [String: Any] = [:]
+        var remaining = argsBody[...]
+        while !remaining.isEmpty {
+            // Trim leading whitespace / commas.
+            while let first = remaining.first, first == "," || first.isWhitespace {
+                remaining = remaining.dropFirst()
+            }
+            guard let colon = remaining.firstIndex(of: ":") else { break }
+            let key = String(remaining[..<colon])
+                .trimmingCharacters(in: .whitespaces)
+            remaining = remaining[remaining.index(after: colon)...]
+
+            if remaining.hasPrefix(escape) {
+                // Quoted string between escape markers.
+                let afterOpen = remaining.dropFirst(escape.count)
+                guard let endRange = afterOpen.range(of: escape) else { break }
+                let value = String(afterOpen[..<endRange.lowerBound])
+                args[key] = value
+                remaining = afterOpen[endRange.upperBound...]
+            } else {
+                // Bare value until the next comma.
+                let endIdx = remaining.firstIndex(of: ",") ?? remaining.endIndex
+                let raw = String(remaining[..<endIdx])
+                    .trimmingCharacters(in: .whitespaces)
+                // Best-effort type coercion: number, bool, else string.
+                if let i = Int(raw) {
+                    args[key] = i
+                } else if let d = Double(raw) {
+                    args[key] = d
+                } else if raw == "true" {
+                    args[key] = true
+                } else if raw == "false" {
+                    args[key] = false
+                } else {
+                    args[key] = raw
+                }
+                remaining = endIdx == remaining.endIndex ? "" : remaining[remaining.index(after: endIdx)...]
+            }
+        }
+
+        guard let data = try? JSONSerialization.data(withJSONObject: args),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return (name, json)
     }
 
     /// Wraps a TyKaoz `ToolSpec` in the OpenAI-style schema dict
