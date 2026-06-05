@@ -184,6 +184,19 @@ actor MLXChatActor {
                 configuration: config
             ) { _ in }
         }
+        // mlx-swift-lm's `infer(from: model_type)` only recognises
+        // exact "gemma" — Gemma 3/4 ship config.json with model_type
+        // "gemma4" (or "gemma3", "gemma3_text", …), so the tool-call
+        // format silently falls back to `.json`. Result: the model
+        // emits its native `call:name{key:value}` envelope as raw
+        // text and we relay it as `.textDelta`. Fix it explicitly
+        // for the Gemma family.
+        if modelID.localizedCaseInsensitiveContains("gemma") {
+            await loaded.update { ctx in
+                ctx.configuration.toolCallFormat = .gemma
+            }
+        }
+
         container = loaded
         await MLXModelStore.shared.touch(modelID: modelID)
         return loaded
