@@ -80,6 +80,9 @@ actor MLXEmbeddingActor {
             // load is fast (memory mapping the safetensors).
         }
         container = loaded
+        // Bump the mtime so the LRU eviction pass on next launch
+        // treats this model as "recently used".
+        await MLXModelStore.shared.touch(modelID: modelID)
         return loaded
     }
 

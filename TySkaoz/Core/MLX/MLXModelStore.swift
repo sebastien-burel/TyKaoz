@@ -170,6 +170,94 @@ final class MLXModelStore {
         return (try? diskSize(of: cacheRoot)) ?? 0
     }
 
+    /// Lists all currently-installed model snapshots, newest first.
+    /// Built by reading the `models--<org>--<name>/snapshots/<rev>/`
+    /// pattern under the hub cache root. Used by the management
+    /// view + LRU eviction.
+    struct InstalledModel {
+        let modelID: String
+        let directory: URL
+        let sizeBytes: Int64
+        /// Modification date of the snapshot directory — proxy for
+        /// "last touched". Used by the LRU eviction pass.
+        let touchedAt: Date
+    }
+
+    func installedModels() -> [InstalledModel] {
+        guard let root = hubCacheRoot() else { return [] }
+        let fm = FileManager.default
+        guard let repos = try? fm.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var out: [InstalledModel] = []
+        for repoDir in repos {
+            let name = repoDir.lastPathComponent
+            guard name.hasPrefix("models--") else { continue }
+            // Decode `models--<org>--<name>` back to `<org>/<name>`.
+            let stripped = name.dropFirst("models--".count)
+            let slug = stripped.replacingOccurrences(of: "--", with: "/")
+
+            let snapshotsRoot = repoDir.appendingPathComponent("snapshots", isDirectory: true)
+            guard let revisions = try? fm.contentsOfDirectory(
+                at: snapshotsRoot,
+                includingPropertiesForKeys: [.contentModificationDateKey],
+                options: [.skipsHiddenFiles]
+            ), let snapshot = revisions.first else {
+                continue
+            }
+            let size = (try? diskSize(of: repoDir)) ?? 0
+            let touched = (try? snapshot.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+            out.append(InstalledModel(
+                modelID: slug,
+                directory: snapshot,
+                sizeBytes: size,
+                touchedAt: touched
+            ))
+        }
+        return out.sorted { $0.touchedAt > $1.touchedAt }
+    }
+
+    /// Touches a model's snapshot dir so the LRU pass treats it as
+    /// recently used. Called from the embed actor after each load.
+    func touch(modelID: String) {
+        guard let dir = localDirectory(modelID: modelID) else { return }
+        try? FileManager.default.setAttributes(
+            [.modificationDate: Date()],
+            ofItemAtPath: dir.path
+        )
+    }
+
+    /// LRU eviction. Walks installed models from oldest to newest
+    /// and removes them until the total cache size fits under
+    /// `capBytes`. Skips `pinned` (typically the currently-active
+    /// embedding model) so the wiki doesn't lose its model mid-run.
+    /// Returns the slugs evicted.
+    @discardableResult
+    func evictIfOverCap(_ capBytes: Int64, pinned: Set<String> = []) -> [String] {
+        var current = totalCacheSize()
+        if current <= capBytes { return [] }
+
+        // Oldest first.
+        let candidates = installedModels()
+            .filter { !pinned.contains($0.modelID) }
+            .sorted { $0.touchedAt < $1.touchedAt }
+
+        var evicted: [String] = []
+        for victim in candidates {
+            if current <= capBytes { break }
+            remove(modelID: victim.modelID)
+            current -= victim.sizeBytes
+            evicted.append(victim.modelID)
+        }
+        return evicted
+    }
+
     /// Root of the HF Hub cache for UI display. Under sandbox this
     /// resolves to `~/Library/Containers/<bundle id>/Data/Library/
     /// Caches/huggingface/hub/` — mirrors swift-huggingface's

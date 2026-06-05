@@ -15,6 +15,7 @@ struct TySkaozApp: App {
     @State private var memoryStore = MemoryStore()
     @State private var pluginStore = PluginStore()
     @State private var wikiManager = WikiManager()
+    @State private var mlxDownloads = MLXDownloadCenter()
 
     init() {
         FontRegistration.registerBundledFonts()
@@ -29,9 +30,18 @@ struct TySkaozApp: App {
                 .environment(memoryStore)
                 .environment(pluginStore)
                 .environment(wikiManager)
+                .environment(mlxDownloads)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
                 .onAppear {
                     wikiManager.reconcile(settings: settings)
+                    // Launch-time LRU pass. Pinning the currently-
+                    // configured wiki embedding model so a stale
+                    // cap doesn't evict the live one.
+                    let cap = Int64(settings.mlxCacheCapGB * 1024 * 1024 * 1024)
+                    let pinned: Set<String> = settings.wikiEmbeddingProviderID == "mlx"
+                        ? [settings.wikiEmbeddingModelID]
+                        : []
+                    _ = MLXModelStore.shared.evictIfOverCap(cap, pinned: pinned)
                 }
                 .onChange(of: settings.wikiEnabled) { _, _ in
                     wikiManager.reconcile(settings: settings)
@@ -60,6 +70,7 @@ struct TySkaozApp: App {
                 .environment(memoryStore)
                 .environment(pluginStore)
                 .environment(wikiManager)
+                .environment(mlxDownloads)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
 

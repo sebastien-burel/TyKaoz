@@ -365,6 +365,14 @@ final class AppSettings {
         didSet { defaults.set(wikiEmbeddingProviderID, forKey: Keys.wikiEmbeddingProviderID) }
     }
 
+    /// Cap (in gigabytes) for the MLX model cache. The launch GC
+    /// pass evicts least-recently-used models until the total drops
+    /// under this number. 10 GB by default — covers bge-m3-4bit +
+    /// Llama-3.2-3B-4bit (Phase C) with headroom.
+    var mlxCacheCapGB: Double {
+        didSet { defaults.set(mlxCacheCapGB, forKey: Keys.mlxCacheCapGB) }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -431,6 +439,8 @@ final class AppSettings {
         let storedDim = defaults.integer(forKey: Keys.wikiEmbeddingDimension)
         self.wikiEmbeddingDimension = storedDim > 0 ? storedDim : 768
         self.wikiEmbeddingProviderID = defaults.string(forKey: Keys.wikiEmbeddingProviderID) ?? "ollama"
+        let storedCap = defaults.double(forKey: Keys.mlxCacheCapGB)
+        self.mlxCacheCapGB = storedCap > 0 ? storedCap : 10
     }
 
     private enum Keys {
@@ -452,6 +462,7 @@ final class AppSettings {
         static let wikiEmbeddingModelID = "wiki.embeddingModelID"
         static let wikiEmbeddingDimension = "wiki.embeddingDimension"
         static let wikiEmbeddingProviderID = "wiki.embeddingProviderID"
+        static let mlxCacheCapGB = "mlx.cacheCapGB"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"
