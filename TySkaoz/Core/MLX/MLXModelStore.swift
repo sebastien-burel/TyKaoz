@@ -137,22 +137,29 @@ final class MLXModelStore {
 
         try preflightDiskSpace(for: modelID)
 
-        // Use MLXLMCommon's `resolve(...)` to drive only the file
-        // download — it routes through the same Downloader the
-        // embed/chat actors will use later, so the cache layout
-        // matches, but it doesn't try to load the architecture into
-        // memory. That way an embedder factory doesn't choke on a
-        // chat / VLM slug, and the progress closure fires for any
-        // model kind.
+        // The upstream `Progress` coming back from `resolve(...)`
+        // technically updates per-byte but in practice it stays
+        // stuck near 0 % until late in the download (the parent
+        // aggregator depends on child `totalUnitCount` values that
+        // arrive only after each file's HEAD response, and the
+        // safetensors weighs ~95 % of the total). So we ignore
+        // that source and poll the repo dir's size on disk in
+        // parallel — gives a smooth, monotone bar.
+        let expected = Self.knownSizes[modelID]
+            ?? MLXModelCatalog.entry(forID: modelID)?.sizeBytes
+            ?? 0
         do {
-            _ = try await resolve(
-                configuration: ModelConfiguration(id: modelID),
-                from: downloader,
-                useLatest: false
-            ) { @Sendable progress in
-                Task { @MainActor in
-                    progressHandler(progress.fractionCompleted)
-                }
+            try await withPollingProgress(
+                modelID: modelID,
+                expected: expected,
+                handler: progressHandler
+            ) {
+                _ = try await resolve(
+                    configuration: ModelConfiguration(id: modelID),
+                    from: downloader,
+                    useLatest: false,
+                    progressHandler: { _ in }
+                )
             }
         } catch {
             throw Failure.downloadFailed(modelID: modelID, underlying: error)
@@ -169,6 +176,37 @@ final class MLXModelStore {
             )
         }
         return dir
+    }
+
+    /// Runs `body` (typically the `resolve(...)` call) while a
+    /// sibling task polls `sizeOnDisk(modelID:)` and reports
+    /// progress every 250 ms. The poll task is always cancelled on
+    /// exit (success, throw, or task cancellation upstream). When
+    /// `expected` is zero (off-catalog slug) the handler stays at
+    /// 0 % during the download and snaps to 100 % at the end —
+    /// honest about the missing reference rather than guessing.
+    private func withPollingProgress(
+        modelID: String,
+        expected: Int64,
+        handler: @MainActor @Sendable @escaping (Double) -> Void,
+        body: () async throws -> Void
+    ) async throws {
+        let pollTask = Task<Void, Never> { [weak self] in
+            while !Task.isCancelled {
+                let size = self?.sizeOnDisk(modelID: modelID) ?? 0
+                let frac: Double
+                if expected > 0 {
+                    frac = min(Double(size) / Double(expected), 0.99)
+                } else {
+                    frac = 0
+                }
+                await MainActor.run { handler(frac) }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
+        defer { pollTask.cancel() }
+        try await body()
+        await MainActor.run { handler(1.0) }
     }
 
     // MARK: - Cache management
