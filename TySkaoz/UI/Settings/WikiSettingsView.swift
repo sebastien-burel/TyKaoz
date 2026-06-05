@@ -35,14 +35,16 @@ struct WikiSettingsView: View {
                     Picker("Provider", selection: $settings.wikiEmbeddingProviderID) {
                         Text("Ollama").tag("ollama")
                         Text("Local OpenAI (vLLM, LM Studio…)").tag("localOpenAI")
+                        Text("MLX (in-process)").tag("mlx")
                     }
                     .pickerStyle(.segmented)
 
                     Text("""
-                    Réutilise l'URL configurée dans le provider \
-                    correspondant (Réglages → Ollama ou Local OpenAI). \
-                    Le provider sert uniquement les embeddings ici ; \
-                    le provider de chat reste indépendant.
+                    Ollama / Local OpenAI réutilisent l'URL du provider \
+                    correspondant. MLX exécute bge-m3 directement dans \
+                    l'app via Apple Silicon — pas de serveur, modèle \
+                    téléchargé à la demande. Le provider de chat reste \
+                    indépendant.
                     """)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)

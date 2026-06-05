@@ -35,6 +35,7 @@ struct SettingsPanelView: View {
         case .provider(.google):    GoogleSettingsView()
         case .provider(.localOpenAI): LocalOpenAISettingsView()
         case .provider(.mistral):   MistralSettingsView()
+        case .provider(.mlx):       MLXSettingsView()
         case .provider(.ollama):    OllamaSettingsView()
         case .provider(.openai):    OpenAISettingsView()
         case .provider(.qwen):      QwenSettingsView()
@@ -175,6 +176,10 @@ private struct ProvidersSidebar: View {
         case .localOpenAI:
             return (settings.localOpenAIBaseURL != nil && settings.localOpenAIModel?.isEmpty == false)
                 ? .green : .gray
+        case .mlx:
+            // No persistent "active model" for MLX yet — chat support
+            // lands in Phase C. Stay neutral until then.
+            return .gray
         case .mistral:
             return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
                 ? .green : .gray
@@ -203,6 +208,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case google
     case localOpenAI
     case mistral
+    case mlx
     case ollama
     case openai
     case qwen
@@ -218,6 +224,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case "google":      self = .google
         case "localOpenAI": self = .localOpenAI
         case "mistral":     self = .mistral
+        case "mlx":         self = .mlx
         case "ollama":      self = .ollama
         case "openai":      self = .openai
         case "qwen":        self = .qwen
@@ -234,6 +241,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case .google:       return "Google Gemini"
         case .localOpenAI:  return "Local OpenAI"
         case .mistral:      return "Mistral"
+        case .mlx:          return "MLX (local)"
         case .ollama:       return "Ollama"
         case .openai:       return "OpenAI"
         case .qwen:         return "Qwen Cloud"

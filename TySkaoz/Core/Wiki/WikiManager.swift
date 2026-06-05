@@ -113,26 +113,35 @@ final class WikiManager {
     }
 
     /// Picks the URL the configured embedding provider should hit.
+    /// Returns `nil` for in-process providers (MLX) — the embedder
+    /// runs locally and doesn't need a base URL.
     static func embedderURL(for providerID: String, settings: AppSettings) -> URL? {
         switch providerID {
         case "localOpenAI": return settings.localOpenAIBaseURL
+        case "mlx":         return nil
         case "ollama":      return settings.serverURL
         default:            return settings.serverURL
         }
     }
 
     /// Constructs the right concrete `EmbeddingProvider` for the chosen
-    /// runtime. Returns nil when the prerequisite (URL, key…) is
-    /// missing — the wiki tools will then refuse to search rather than
-    /// firing into the void.
+    /// runtime. Returns nil when a network-bound runtime is missing
+    /// its prerequisite (URL, key…). MLX has no URL prerequisite —
+    /// its prerequisite is the model on disk, validated at first
+    /// `embed()` call inside the actor.
     private static func makeEmbedder(
         providerID: String,
         url: URL?,
         settings: AppSettings
     ) -> EmbeddingProvider? {
-        guard let url else { return nil }
         switch providerID {
+        case "mlx":
+            return MLXEmbeddingProvider(
+                modelID: settings.wikiEmbeddingModelID,
+                dimension: settings.wikiEmbeddingDimension
+            )
         case "localOpenAI":
+            guard let url else { return nil }
             return LocalOpenAIEmbeddingProvider(
                 baseURL: url,
                 apiKey: settings.localOpenAIAPIKey,
@@ -140,6 +149,7 @@ final class WikiManager {
                 dimension: settings.wikiEmbeddingDimension
             )
         default:
+            guard let url else { return nil }
             return OllamaEmbeddingProvider(
                 baseURL: url,
                 modelID: settings.wikiEmbeddingModelID,

@@ -41,6 +41,10 @@ enum ProviderFactory {
                 model: model
             )
 
+        case "mlx":
+            // Chat side of MLX lands in Phase C — no chat provider yet.
+            return nil
+
         case "mistral":
             guard !settings.mistralAPIKey.isEmpty,
                   let model = settings.mistralModel,

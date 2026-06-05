@@ -181,6 +181,7 @@ final class AppSettings {
         case .google:       return googleCatalog
         case .localOpenAI:  return localOpenAICatalog
         case .mistral:      return mistralCatalog
+        case .mlx:          return []
         case .ollama:       return ollamaCatalog
         case .openai:       return openaiCatalog
         case .qwen:         return qwenCatalog
@@ -196,6 +197,7 @@ final class AppSettings {
         case .google:       googleCatalog = ids
         case .localOpenAI:  localOpenAICatalog = ids
         case .mistral:      mistralCatalog = ids
+        case .mlx:          break
         case .ollama:       ollamaCatalog = ids
         case .openai:       openaiCatalog = ids
         case .qwen:         qwenCatalog = ids
@@ -258,6 +260,7 @@ final class AppSettings {
         case .google:       return enabledGoogleModels
         case .localOpenAI:  return enabledLocalOpenAIModels
         case .mistral:      return enabledMistralModels
+        case .mlx:          return []
         case .ollama:       return enabledOllamaModels
         case .openai:       return enabledOpenAIModels
         case .qwen:         return enabledQwenModels
@@ -281,6 +284,10 @@ final class AppSettings {
         case .localOpenAI:
             if enabled { enabledLocalOpenAIModels.insert(modelID) } else { enabledLocalOpenAIModels.remove(modelID) }
             constrainActive(&localOpenAIModel, to: enabledLocalOpenAIModels)
+        case .mlx:
+            // No chat catalog yet; Phase C wires this when MLX
+            // chat lands.
+            break
         case .mistral:
             if enabled { enabledMistralModels.insert(modelID) } else { enabledMistralModels.remove(modelID) }
             constrainActive(&mistralModel, to: enabledMistralModels)

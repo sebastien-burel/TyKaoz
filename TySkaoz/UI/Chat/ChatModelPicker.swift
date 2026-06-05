@@ -52,6 +52,10 @@ struct ChatModelPicker: View {
             return formatLabel(provider, model: settings.googleModel)
         case .localOpenAI:
             return formatLabel(provider, model: settings.localOpenAIModel)
+        case .mlx:
+            // Chat side of MLX lands in Phase C — picker reads
+            // "aucun modèle" until then.
+            return formatLabel(provider, model: String?.none)
         case .mistral:
             return formatLabel(provider, model: settings.mistralModel)
         case .ollama:
@@ -119,6 +123,7 @@ struct ChatModelPicker: View {
         case .deepseek:  return settings.deepseekModel == model
         case .google:    return settings.googleModel == model
         case .localOpenAI: return settings.localOpenAIModel == model
+        case .mlx:       return false
         case .mistral:   return settings.mistralModel == model
         case .ollama:    return settings.selectedModel == model
         case .openai:    return settings.openaiModel == model
@@ -135,6 +140,7 @@ struct ChatModelPicker: View {
         case .deepseek:  settings.deepseekModel = model
         case .google:    settings.googleModel = model
         case .localOpenAI: settings.localOpenAIModel = model
+        case .mlx:       break
         case .mistral:   settings.mistralModel = model
         case .ollama:    settings.selectedModel = model
         case .openai:    settings.openaiModel = model
