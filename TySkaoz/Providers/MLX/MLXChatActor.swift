@@ -89,7 +89,6 @@ actor MLXChatActor {
                     let needsGemma4 = modelID.localizedCaseInsensitiveContains("gemma-4")
                         || modelID.localizedCaseInsensitiveContains("gemma4")
                     var gemma4Buffer = ""
-                    var inGemma4Call = false
 
                     for await event in stream {
                         if Task.isCancelled { break }
@@ -99,7 +98,6 @@ actor MLXChatActor {
                                 Self.processGemma4Chunk(
                                     text,
                                     buffer: &gemma4Buffer,
-                                    inCall: &inGemma4Call,
                                     continuation: continuation
                                 )
                             } else {
@@ -269,73 +267,98 @@ actor MLXChatActor {
     /// - When `inCall == true`, `buffer` holds the entire span from
     ///   the open marker forward, waiting for the close marker so
     ///   the payload can be parsed atomically.
+    /// Inline tokens Gemma 4 emits that the chat template fails
+    /// to suppress. Each entry pairs the open markers with their
+    /// close marker and how the content between should be routed:
+    /// `.toolCall` runs through `parseGemma4Payload`; `.reasoning`
+    /// goes out as `.reasoningDelta` (kept for round-trip, not
+    /// rendered in the chat view); `.suppress` is dropped.
+    private enum Gemma4BlockKind {
+        case toolCall
+        case reasoning
+        case suppress
+    }
+    private struct Gemma4Block {
+        let opens: [String]
+        let close: String
+        let kind: Gemma4BlockKind
+    }
+    private static let gemma4Blocks: [Gemma4Block] = [
+        // Tool call envelopes (two open forms, single close form).
+        Gemma4Block(
+            opens: ["<|tool_call>", "<tool_call>"],
+            close: "<tool_call|>",
+            kind: .toolCall
+        ),
+        // Inline channel marker — Gemma 4 uses these to label
+        // internal monologue. Surface as reasoning so the next
+        // round can carry it back if needed; the chat view drops
+        // `.reasoningDelta` events from display.
+        Gemma4Block(
+            opens: ["<|channel>"],
+            close: "<channel|>",
+            kind: .reasoning
+        ),
+    ]
+
+    /// Streaming-aware Gemma 4 marker stripper. The active block
+    /// (if any) is encoded in the buffer's prefix — when the buffer
+    /// starts with one of the known open markers, we're inside
+    /// that block. No separate state variable needed.
     private static func processGemma4Chunk(
         _ text: String,
         buffer: inout String,
-        inCall: inout Bool,
         continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
     ) {
-        // Gemma 4 emits at least two open markers in practice:
-        // - `<|tool_call>` paired with the gemma envelope (`call:n{...}`)
-        // - `<tool_call>` paired with a malformed-JSON envelope
-        //   (`{"name":"…","arguments":{"k:<|"|>v<|"|>}}`).
-        // Both close with `<tool_call|>` (pipe before `>`), which
-        // makes the close marker our reliable demarcator.
-        let openMarkers = ["<|tool_call>", "<tool_call>"]
-        let closeMarker = "<tool_call|>"
+        let allOpens = gemma4Blocks.flatMap(\.opens)
+        let maxOpenLen = allOpens.map(\.count).max() ?? 0
         buffer += text
 
         // Process the buffer repeatedly until no transition is
         // possible (handles edge cases like multiple tool calls or
         // a tool call sandwiched between text in one chunk).
-        // Used for the "safe tail to hold back" math.
-        let maxOpenLen = openMarkers.map(\.count).max() ?? 0
-
         while true {
-            if inCall {
-                guard let closeRange = buffer.range(of: closeMarker) else {
-                    return
-                }
-                // Strip whichever open marker is at the buffer start.
-                var payloadStart = buffer.startIndex
-                for marker in openMarkers where buffer.hasPrefix(marker) {
-                    payloadStart = buffer.index(buffer.startIndex, offsetBy: marker.count)
+            // Figure out whether we're already inside a block (the
+            // buffer starts with one of the known open markers).
+            var activeBlock: (Gemma4Block, String)? = nil
+            for block in gemma4Blocks {
+                for open in block.opens where buffer.hasPrefix(open) {
+                    activeBlock = (block, open)
                     break
                 }
-                let payload = String(buffer[payloadStart..<closeRange.lowerBound])
-                if let parsed = parseGemma4Payload(payload) {
-                    continuation.yield(.toolCall(
-                        id: "mlx-" + UUID().uuidString.prefix(8).lowercased(),
-                        name: parsed.name,
-                        argumentsJSON: parsed.argumentsJSON
-                    ))
-                } else {
-                    let raw = String(buffer[..<closeRange.upperBound])
-                    continuation.yield(.textDelta(raw))
+                if activeBlock != nil { break }
+            }
+
+            if let (block, openMarker) = activeBlock {
+                // Inside a block — look for its close marker.
+                guard let closeRange = buffer.range(of: block.close) else {
+                    // No close yet; keep buffering.
+                    return
                 }
+                let payloadStart = buffer.index(buffer.startIndex, offsetBy: openMarker.count)
+                let payload = String(buffer[payloadStart..<closeRange.lowerBound])
+                emitGemma4Block(block.kind, payload: payload, raw: String(buffer[..<closeRange.upperBound]), continuation: continuation)
                 buffer = String(buffer[closeRange.upperBound...])
-                inCall = false
             } else {
-                // Pick the earliest open marker in the buffer.
-                var earliest: (Range<String.Index>, String)? = nil
-                for marker in openMarkers {
-                    if let range = buffer.range(of: marker) {
-                        if earliest == nil || range.lowerBound < earliest!.0.lowerBound {
-                            earliest = (range, marker)
+                // Outside any block — scan for the earliest open
+                // marker of any kind.
+                var earliest: Range<String.Index>? = nil
+                for open in allOpens {
+                    if let range = buffer.range(of: open) {
+                        if earliest == nil || range.lowerBound < earliest!.lowerBound {
+                            earliest = range
                         }
                     }
                 }
-                if let (openRange, _) = earliest {
+                if let openRange = earliest {
                     let prefix = String(buffer[..<openRange.lowerBound])
                     if !prefix.isEmpty {
                         continuation.yield(.textDelta(prefix))
                     }
                     buffer = String(buffer[openRange.lowerBound...])
-                    inCall = true
                 } else {
-                    // Hold back the longest possible open-marker
-                    // suffix so a split-across-chunks marker isn't
-                    // missed.
+                    // No open marker. Emit everything except a tail
+                    // big enough to hide a split-across-chunks marker.
                     if buffer.count > maxOpenLen {
                         let safeEnd = buffer.index(buffer.endIndex, offsetBy: -maxOpenLen)
                         let safe = String(buffer[..<safeEnd])
@@ -347,6 +370,40 @@ actor MLXChatActor {
                     return
                 }
             }
+        }
+    }
+
+    /// Routes a closed Gemma 4 block to the right `StreamEvent`.
+    private static func emitGemma4Block(
+        _ kind: Gemma4BlockKind,
+        payload: String,
+        raw: String,
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) {
+        switch kind {
+        case .toolCall:
+            if let parsed = parseGemma4Payload(payload) {
+                continuation.yield(.toolCall(
+                    id: "mlx-" + UUID().uuidString.prefix(8).lowercased(),
+                    name: parsed.name,
+                    argumentsJSON: parsed.argumentsJSON
+                ))
+            } else {
+                // Couldn't parse — emit the raw span as text so
+                // nothing is silently swallowed.
+                continuation.yield(.textDelta(raw))
+            }
+        case .reasoning:
+            // Discard the channel name, keep the content. The chat
+            // view drops `.reasoningDelta` from display but the next
+            // round can carry it through if the provider supports it.
+            let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                continuation.yield(.reasoningDelta(trimmed))
+            }
+        case .suppress:
+            // Eat the whole block silently.
+            break
         }
     }
 
