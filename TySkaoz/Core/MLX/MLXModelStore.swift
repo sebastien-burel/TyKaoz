@@ -66,14 +66,29 @@ final class MLXModelStore {
 
     // MARK: - Presence
 
-    /// Tries to resolve a model's local directory by parsing the HF
-    /// cache layout. Returns `nil` when nothing is on disk.
-    func localDirectory(modelID: String) -> URL? {
+    /// Root of a model's repo on disk — `cache/models--<org>--<name>/`.
+    /// This is where the actual weight files live (under `blobs/`);
+    /// the `snapshots/` subdir holds symlinks pointing at them. We
+    /// size + check presence at the repo level so symlinks vs.
+    /// regular files don't trip us up.
+    func repoDirectory(modelID: String) -> URL? {
         guard let cacheRoot = hubCacheRoot() else { return nil }
-        // HF Hub stores repos as `models--<org>--<name>/snapshots/<rev>/`.
         let slug = "models--" + modelID.replacingOccurrences(of: "/", with: "--")
-        let repoRoot = cacheRoot.appendingPathComponent(slug, isDirectory: true)
-        let snapshots = repoRoot.appendingPathComponent("snapshots", isDirectory: true)
+        let url = cacheRoot.appendingPathComponent(slug, isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              isDir.boolValue else {
+            return nil
+        }
+        return url
+    }
+
+    /// Tries to resolve the latest snapshot directory (the one
+    /// containing the user-facing symlinks). Returns `nil` when
+    /// nothing is on disk. Used by the embed actor + LRU touch.
+    func localDirectory(modelID: String) -> URL? {
+        guard let repo = repoDirectory(modelID: modelID) else { return nil }
+        let snapshots = repo.appendingPathComponent("snapshots", isDirectory: true)
         guard let revisions = try? FileManager.default.contentsOfDirectory(
             at: snapshots,
             includingPropertiesForKeys: [.isDirectoryKey],
@@ -84,22 +99,22 @@ final class MLXModelStore {
         return firstRevision
     }
 
-    /// `true` when the model directory is on disk and its total size
-    /// is at least 90% of the expected size — accounts for minor
-    /// variation across revisions while still catching a
-    /// half-downloaded snapshot.
+    /// `true` when the model is on disk and its repo size is at
+    /// least 90% of the expected size — catches half-downloaded
+    /// snapshots while tolerating minor revision drift.
     func isInstalled(modelID: String) -> Bool {
-        guard let dir = localDirectory(modelID: modelID) else { return false }
-        let actual = (try? diskSize(of: dir)) ?? 0
+        let actual = sizeOnDisk(modelID: modelID)
+        if actual == 0 { return false }
         let expected = Self.knownSizes[modelID] ?? 0
-        if expected == 0 { return actual > 0 }
+        if expected == 0 { return true }
         return actual >= Int64(Double(expected) * 0.9)
     }
 
-    /// Bytes on disk for a specific model. Useful for the cache
-    /// management UI.
+    /// Bytes on disk for a specific model. Sized at the REPO level
+    /// (includes the `blobs/` subdir where the real files live —
+    /// the `snapshots/` subdir holds symlinks, not regular files).
     func sizeOnDisk(modelID: String) -> Int64 {
-        guard let dir = localDirectory(modelID: modelID) else { return 0 }
+        guard let dir = repoDirectory(modelID: modelID) else { return 0 }
         return (try? diskSize(of: dir)) ?? 0
     }
 
