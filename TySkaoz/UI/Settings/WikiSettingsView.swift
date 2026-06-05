@@ -156,13 +156,17 @@ struct WikiSettingsView: View {
         switch wiki.embedderLoadState {
         case .idle, .ready:
             EmptyView()
-        case .downloading(let progress):
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Téléchargement du modèle… \(Int(progress * 100)) %",
-                      systemImage: "arrow.down.circle")
+        case .downloading:
+            // URLSession download tmp files live in the
+            // nsurlsessiond daemon's cache outside the sandbox —
+            // byte-level progress can't be observed honestly.
+            // Show an indeterminate spinner instead of a fake bar.
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Téléchargement du modèle en cours…")
                     .font(Brand.Fonts.body(12))
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
+                    .foregroundStyle(.secondary)
             }
         case .loading:
             Label("Chargement en mémoire…", systemImage: "cpu")

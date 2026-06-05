@@ -9,6 +9,11 @@ struct MLXSettingsView: View {
 
     @State private var installed: [MLXModelStore.InstalledModel] = []
     @State private var totalSize: Int64 = 0
+    /// Ticks while any download is in flight to force the
+    /// `downloadedSizeLabel` to recompute. Without this the
+    /// bytes-on-disk counter would only update on the rare events
+    /// observed by `downloads.inflight.count` / `removalTick`.
+    @State private var diskPollTick: Int = 0
 
     var body: some View {
         @Bindable var settings = settings
@@ -65,6 +70,18 @@ struct MLXSettingsView: View {
         }
         .task(id: downloads.inflight.count) {
             refresh()
+        }
+        .task(id: downloads.inflight.isEmpty) {
+            // Spin a 500 ms poll loop while at least one download
+            // is in flight. The tick read by the rows triggers a
+            // recompute of `downloadedSizeLabel`, so the
+            // bytes-on-disk counter feels live.
+            while !downloads.inflight.isEmpty {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                if Task.isCancelled { break }
+                diskPollTick &+= 1
+                totalSize = MLXModelStore.shared.totalCacheSize()
+            }
         }
     }
 
@@ -132,12 +149,24 @@ struct MLXSettingsView: View {
                 actions(for: model, isInstalled: isInstalled, progress: progress)
             }
 
-            if let progress {
-                ProgressView(value: progress)
-                    .progressViewStyle(.linear)
-                Text("Téléchargement… \(Int(progress * 100)) %")
-                    .font(Brand.Fonts.body(11))
-                    .foregroundStyle(.secondary)
+            if progress != nil {
+                // URLSession download temp files live in the
+                // nsurlsessiond daemon's cache outside the sandbox,
+                // so we can't measure byte-level progress reliably.
+                // Show an indeterminate spinner + the actual
+                // bytes-on-disk count so the user has something
+                // honest to look at.
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Téléchargement en cours…")
+                        .font(Brand.Fonts.body(11))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(downloadedSizeLabel(for: model))
+                        .font(Brand.Fonts.mono(11))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let error {
@@ -220,5 +249,21 @@ struct MLXSettingsView: View {
     private func refresh() {
         installed = MLXModelStore.shared.installedModels()
         totalSize = MLXModelStore.shared.totalCacheSize()
+    }
+
+    /// "Téléchargé 1,2 Go / 1,6 Go" — honest live counter that
+    /// updates as the safetensors gets moved into the HF cache.
+    /// Before the final atomic-rename the number stays near 0 (the
+    /// bytes are in URLSession's tmp outside the sandbox), then
+    /// jumps to ~100 %. Better than a fake percent bar.
+    private func downloadedSizeLabel(for model: MLXModelCatalog.Entry) -> String {
+        // Reading `diskPollTick` here is what re-subscribes the
+        // View to its updates, so the counter refreshes every
+        // 500 ms during a download.
+        _ = diskPollTick
+        let actual = MLXModelStore.shared.sizeOnDisk(modelID: model.id)
+        let actualString = ByteCountFormatter.string(fromByteCount: actual, countStyle: .file)
+        let expectedString = ByteCountFormatter.string(fromByteCount: model.sizeBytes, countStyle: .file)
+        return "\(actualString) / \(expectedString)"
     }
 }

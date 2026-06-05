@@ -178,81 +178,31 @@ final class MLXModelStore {
         return dir
     }
 
-    /// Runs `body` (typically the `resolve(...)` call) while a
-    /// sibling task polls download progress every 250 ms. The poll
-    /// combines two sources:
+    /// Runs `body` (typically the `resolve(...)` call) and signals
+    /// the download lifecycle to `handler`:
     ///
-    /// - `sizeOnDisk(modelID:)` — the HF cache's `blobs/<hash>`
-    ///   directory, populated only after each file's atomic move.
-    ///   Catches small files (configs, tokenizer) that finish
-    ///   quickly enough to land before the next poll tick.
-    /// - `inFlightDownloadBytes()` — URLSession writes to
-    ///   `CFNetworkDownload_*.tmp` files under the sandbox temp
-    ///   dir during the actual transfer. Bigger files (LFS
-    ///   safetensors) only show up here until the move finalises.
+    /// - `0.0` once when the download starts. The UI uses this as
+    ///   a "something is in flight" marker; it renders an
+    ///   indeterminate spinner rather than a fake percent bar.
+    /// - `1.0` once after `body()` returns (success path).
     ///
-    /// Summing them gives a monotone "bytes in flight or landed"
-    /// signal that tracks the safetensors download in real time
-    /// without depending on swift-huggingface's parent/child
-    /// `Progress` aggregator (which goes near-stale until late in
-    /// the download).
-    ///
-    /// When `expected` is zero (off-catalog slug) the handler stays
-    /// at 0 % during the download and snaps to 100 % at the end.
+    /// We don't pretend to deliver byte-level progress: URLSession's
+    /// download tmp files live in the nsurlsessiond daemon cache
+    /// outside our sandbox, and swift-huggingface's parent
+    /// `Progress` aggregator only registers movement late in the
+    /// transfer. Both options were tried and discarded. The
+    /// `MLXSettingsView` instead reads `sizeOnDisk(modelID:)`
+    /// directly to render an honest "X / Y" counter that updates
+    /// as files land in the HF cache.
     private func withPollingProgress(
         modelID: String,
         expected: Int64,
         handler: @MainActor @Sendable @escaping (Double) -> Void,
         body: () async throws -> Void
     ) async throws {
-        let pollTask = Task<Void, Never> { [weak self] in
-            while !Task.isCancelled {
-                guard let self else { return }
-                let landed = self.sizeOnDisk(modelID: modelID)
-                let inFlight = self.inFlightDownloadBytes()
-                let total = landed + inFlight
-                let frac: Double
-                if expected > 0 {
-                    frac = min(Double(total) / Double(expected), 0.99)
-                } else {
-                    frac = 0
-                }
-                await MainActor.run { handler(frac) }
-                try? await Task.sleep(nanoseconds: 250_000_000)
-            }
-        }
-        defer { pollTask.cancel() }
+        await MainActor.run { handler(0) }
         try await body()
         await MainActor.run { handler(1.0) }
-    }
-
-    /// Sums all `CFNetworkDownload_*.tmp` files in the sandbox temp
-    /// directory — URLSession's `downloadTask` writes its stream
-    /// there until the response completes, at which point swift-
-    /// huggingface moves the file into the HF cache. Polling this
-    /// dir lets us see the safetensors download progress in real
-    /// time instead of waiting for the atomic-rename jump.
-    private func inFlightDownloadBytes() -> Int64 {
-        let fm = FileManager.default
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-        guard let entries = try? fm.contentsOfDirectory(
-            at: tmp,
-            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return 0 }
-
-        var total: Int64 = 0
-        for entry in entries {
-            let name = entry.lastPathComponent
-            guard name.hasPrefix("CFNetworkDownload_"),
-                  name.hasSuffix(".tmp") else { continue }
-            if let values = try? entry.resourceValues(
-                forKeys: [.fileSizeKey, .isRegularFileKey]
-            ), values.isRegularFile == true {
-                total += Int64(values.fileSize ?? 0)
-            }
-        }
-        return total
     }
 
     // MARK: - Cache management
