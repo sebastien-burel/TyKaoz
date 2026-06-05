@@ -11,15 +11,14 @@ import Testing
 struct MLXModelStoreTests {
 
     @Test
-    func hubCacheRootIsUnderSandboxedHome() {
+    func hubCacheRootMatchesSwiftHuggingFaceLayout() {
         let root = MLXModelStore.shared.hubCacheRoot()
         #expect(root != nil)
         let path = root?.path ?? ""
-        // Under the sandbox the test bundle inherits the app's
-        // container, so the HOME-based cache path falls inside it.
-        // Outside sandbox (very rare in this codebase) it'd be the
-        // real home — the assertion just checks the suffix.
-        #expect(path.hasSuffix("/.cache/huggingface/hub"))
+        // swift-huggingface points its sandboxed cache at
+        // `URL.cachesDirectory/huggingface/hub` — we mirror it so
+        // `localDirectory(modelID:)` finds the snapshot dir.
+        #expect(path.hasSuffix("/Caches/huggingface/hub"))
     }
 
     @Test

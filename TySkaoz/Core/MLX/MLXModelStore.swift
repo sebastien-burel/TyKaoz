@@ -171,15 +171,15 @@ final class MLXModelStore {
     }
 
     /// Root of the HF Hub cache for UI display. Under sandbox this
-    /// resolves to `~/Library/Containers/<bundle id>/Data/.cache/
-    /// huggingface/hub/`.
+    /// resolves to `~/Library/Containers/<bundle id>/Data/Library/
+    /// Caches/huggingface/hub/` — mirrors swift-huggingface's
+    /// `CacheLocationProvider.defaultCacheDirectory()` sandboxed
+    /// branch (kind: `<cachesDirectory>/huggingface/hub/`).
     func hubCacheRoot() -> URL? {
-        // HuggingFace.HubClient writes to `<HOME>/.cache/huggingface/
-        // hub/` — derive the path from NSHomeDirectory so it stays
-        // correct under the sandbox redirect.
-        let home = URL(fileURLWithPath: NSHomeDirectory())
-        return home
-            .appendingPathComponent(".cache", isDirectory: true)
+        // URL.cachesDirectory is the same value the upstream provider
+        // consults, so the two paths stay in sync without us having
+        // to ask the HubClient instance directly.
+        URL.cachesDirectory
             .appendingPathComponent("huggingface", isDirectory: true)
             .appendingPathComponent("hub", isDirectory: true)
     }
