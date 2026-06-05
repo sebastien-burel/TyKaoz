@@ -72,12 +72,16 @@ struct MLXSettingsView: View {
             refresh()
         }
         .task(id: downloads.inflight.isEmpty) {
-            // Spin a 500 ms poll loop while at least one download
-            // is in flight. The tick read by the rows triggers a
-            // recompute of `downloadedSizeLabel`, so the
-            // bytes-on-disk counter feels live.
+            // 100 ms poll while a download is in flight. The bytes-
+            // on-disk counter mostly stays low during the URLSession
+            // streaming phase (the daemon cache is outside our
+            // sandbox) BUT spikes through several gigabytes during
+            // swift-huggingface's `appendFileContents` phase
+            // (tmp → `<blob>.incomplete`, 64 KB chunks at SSD
+            // speed). At 500 ms we caught one frame of that; at
+            // 100 ms we catch enough to feel like real progress.
             while !downloads.inflight.isEmpty {
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                try? await Task.sleep(nanoseconds: 100_000_000)
                 if Task.isCancelled { break }
                 diskPollTick &+= 1
                 totalSize = MLXModelStore.shared.totalCacheSize()
