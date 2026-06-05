@@ -28,6 +28,18 @@ actor MLXChatActor {
     private let downloader: any Downloader
     private let tokenizerLoader: any TokenizerLoader
 
+    /// Snapshot of when the last chat() call completed. The
+    /// idle-unload task compares against this to decide whether
+    /// activity has happened since it was scheduled.
+    private var lastUsedAt: Date = .distantPast
+    private var idleUnloadTask: Task<Void, Never>?
+
+    /// Default idle threshold before unloading the container. 5
+    /// minutes — short enough to feel polite on a 16 GB Mac running
+    /// the wiki embedder + a chat model, long enough to absorb a
+    /// "I'll come back in a minute" pause without forcing a reload.
+    private let idleTimeout: TimeInterval = 5 * 60
+
     private init(modelID: String) {
         self.modelID = modelID
         self.downloader = #hubDownloader()
@@ -47,6 +59,10 @@ actor MLXChatActor {
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                // Cancel any pending unload — fresh activity.
+                idleUnloadTask?.cancel()
+                idleUnloadTask = nil
+
                 do {
                     let container = try await loadIfNeeded()
                     let userInput = UserInput(
@@ -89,8 +105,15 @@ actor MLXChatActor {
                             break
                         }
                     }
+                    lastUsedAt = Date()
+                    scheduleIdleUnload()
                     continuation.finish()
                 } catch {
+                    // Even on failure, kick off the idle countdown
+                    // so a stuck container doesn't hold memory if
+                    // the user gives up after one bad round.
+                    lastUsedAt = Date()
+                    scheduleIdleUnload()
                     continuation.finish(throwing: error)
                 }
             }
@@ -98,11 +121,39 @@ actor MLXChatActor {
         }
     }
 
-    /// Drops the loaded container — Phase C3's idle-unload hook
-    /// will call this. Releases GPU buffers + ~few GB RAM for
-    /// 4-bit chat models.
+    /// Drops the loaded container. Releases GPU buffers + ~few GB
+    /// RAM for 4-bit chat models. Called by the idle-unload timer
+    /// and exposed publicly so the Phase B settings UI could wire
+    /// a manual "décharger" button later if anyone asks.
     func unload() {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
         container = nil
+    }
+
+    // MARK: - Idle unload
+
+    /// Starts (or restarts) the idle-unload countdown. The task
+    /// snapshots `lastUsedAt` at scheduling time; on wake it
+    /// compares against the current value — if anything has used
+    /// the actor in the meantime, the snapshot has moved and the
+    /// unload is skipped. This way two overlapping schedulings
+    /// don't double-unload.
+    private func scheduleIdleUnload() {
+        idleUnloadTask?.cancel()
+        let scheduledAt = lastUsedAt
+        let timeoutNanos = UInt64(idleTimeout * 1_000_000_000)
+        idleUnloadTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: timeoutNanos)
+            if Task.isCancelled { return }
+            await self?.unloadIfStill(scheduledAt: scheduledAt)
+        }
+    }
+
+    private func unloadIfStill(scheduledAt: Date) {
+        guard lastUsedAt == scheduledAt else { return }
+        container = nil
+        idleUnloadTask = nil
     }
 
     // MARK: - Internals
