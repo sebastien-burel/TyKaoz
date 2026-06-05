@@ -42,8 +42,10 @@ enum ProviderFactory {
             )
 
         case "mlx":
-            // Chat side of MLX lands in Phase C — no chat provider yet.
-            return nil
+            guard let modelID = settings.mlxChatModelID,
+                  !modelID.isEmpty
+            else { return nil }
+            return MLXLLMProvider(modelID: modelID)
 
         case "mistral":
             guard !settings.mistralAPIKey.isEmpty,

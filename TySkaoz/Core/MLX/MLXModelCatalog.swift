@@ -65,8 +65,33 @@ enum MLXModelCatalog {
         ),
     ]
 
-    /// Chat models — populated in Phase C.
-    static let chats: [Entry] = []
+    /// Chat models. First entry is the recommended default.
+    static let chats: [Entry] = [
+        .init(
+            id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
+            displayName: "Llama 3.2 3B Instruct (4-bit)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: 2 * 1024 * 1024 * 1024,
+            summary: "Multilingue, instruction-tuned, ~2 Go. Bon défaut pour un Mac 16 Go."
+        ),
+        .init(
+            id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
+            displayName: "Qwen 2.5 3B Instruct (4-bit)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: 2 * 1024 * 1024 * 1024,
+            summary: "Bon en français + tool-calling structuré. Taille équivalente à Llama 3.2 3B."
+        ),
+        .init(
+            id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
+            displayName: "Llama 3.2 1B Instruct (4-bit)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: 750 * 1024 * 1024,
+            summary: "Très léger (~750 Mo). Pour tester le pipeline ou un Mac 8 Go."
+        ),
+    ]
 
     /// Lookup by HF slug. Used to enrich download progress lines and
     /// the wiki picker's auto-defaults.

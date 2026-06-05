@@ -53,9 +53,11 @@ struct ChatModelPicker: View {
         case .localOpenAI:
             return formatLabel(provider, model: settings.localOpenAIModel)
         case .mlx:
-            // Chat side of MLX lands in Phase C — picker reads
-            // "aucun modèle" until then.
-            return formatLabel(provider, model: String?.none)
+            return formatLabel(
+                provider,
+                model: settings.mlxChatModelID
+                    .flatMap { MLXModelCatalog.entry(forID: $0)?.displayName ?? $0 }
+            )
         case .mistral:
             return formatLabel(provider, model: settings.mistralModel)
         case .ollama:
@@ -93,6 +95,27 @@ struct ChatModelPicker: View {
                     }
                 }
             }
+        case .mlx:
+            // Catalog is static and installation = "available".
+            // Only show models actually on disk so the picker doesn't
+            // dangle entries that would 404 on chat().
+            let installed = MLXModelCatalog.chats
+                .filter { MLXModelStore.shared.isInstalled(modelID: $0.id) }
+            if !installed.isEmpty {
+                Section(provider.displayName) {
+                    ForEach(installed) { entry in
+                        Button {
+                            activate(provider: .mlx, model: entry.id)
+                        } label: {
+                            if isActive(provider: .mlx, model: entry.id) {
+                                Label(entry.displayName, systemImage: "checkmark")
+                            } else {
+                                Text(entry.displayName)
+                            }
+                        }
+                    }
+                }
+            }
         default:
             let enabled = settings.enabledModels(for: provider).sorted()
             if !enabled.isEmpty {
@@ -123,7 +146,7 @@ struct ChatModelPicker: View {
         case .deepseek:  return settings.deepseekModel == model
         case .google:    return settings.googleModel == model
         case .localOpenAI: return settings.localOpenAIModel == model
-        case .mlx:       return false
+        case .mlx:       return settings.mlxChatModelID == model
         case .mistral:   return settings.mistralModel == model
         case .ollama:    return settings.selectedModel == model
         case .openai:    return settings.openaiModel == model
@@ -140,7 +163,7 @@ struct ChatModelPicker: View {
         case .deepseek:  settings.deepseekModel = model
         case .google:    settings.googleModel = model
         case .localOpenAI: settings.localOpenAIModel = model
-        case .mlx:       break
+        case .mlx:       settings.mlxChatModelID = model
         case .mistral:   settings.mistralModel = model
         case .ollama:    settings.selectedModel = model
         case .openai:    settings.openaiModel = model

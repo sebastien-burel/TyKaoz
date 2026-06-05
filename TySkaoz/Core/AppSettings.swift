@@ -373,6 +373,12 @@ final class AppSettings {
         didSet { defaults.set(mlxCacheCapGB, forKey: Keys.mlxCacheCapGB) }
     }
 
+    /// The HuggingFace slug of the currently-selected MLX chat
+    /// model. `nil` means the picker hasn't been touched yet.
+    var mlxChatModelID: String? {
+        didSet { defaults.set(mlxChatModelID, forKey: Keys.mlxChatModelID) }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -441,6 +447,7 @@ final class AppSettings {
         self.wikiEmbeddingProviderID = defaults.string(forKey: Keys.wikiEmbeddingProviderID) ?? "ollama"
         let storedCap = defaults.double(forKey: Keys.mlxCacheCapGB)
         self.mlxCacheCapGB = storedCap > 0 ? storedCap : 10
+        self.mlxChatModelID = defaults.string(forKey: Keys.mlxChatModelID)
     }
 
     private enum Keys {
@@ -463,6 +470,7 @@ final class AppSettings {
         static let wikiEmbeddingDimension = "wiki.embeddingDimension"
         static let wikiEmbeddingProviderID = "wiki.embeddingProviderID"
         static let mlxCacheCapGB = "mlx.cacheCapGB"
+        static let mlxChatModelID = "mlx.chatModelID"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"

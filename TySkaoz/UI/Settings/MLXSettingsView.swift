@@ -45,18 +45,18 @@ struct MLXSettingsView: View {
                 }
             }
 
+            Section("Modèles de chat") {
+                ForEach(MLXModelCatalog.chats) { model in
+                    modelRow(model)
+                }
+            }
+
             if !customInstalledModels.isEmpty {
                 Section("Modèles personnalisés") {
                     ForEach(customInstalledModels, id: \.modelID) { model in
                         customRow(model)
                     }
                 }
-            }
-
-            Section("Chat") {
-                Text("Chat MLX disponible en Phase C — picker dédié à venir.")
-                    .font(Brand.Fonts.body(12))
-                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -201,7 +201,9 @@ struct MLXSettingsView: View {
     /// here. Letting them clean up via this panel keeps the cache
     /// honest.
     private var customInstalledModels: [MLXModelStore.InstalledModel] {
-        let curated = Set(MLXModelCatalog.embeddings.map(\.id))
+        let curated = Set(
+            (MLXModelCatalog.embeddings + MLXModelCatalog.chats).map(\.id)
+        )
         return installed.filter { !curated.contains($0.modelID) }
     }
 
