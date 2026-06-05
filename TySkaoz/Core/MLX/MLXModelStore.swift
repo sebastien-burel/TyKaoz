@@ -1,5 +1,4 @@
 import Foundation
-import MLXEmbedders
 import MLXLMCommon
 import MLXHuggingFace
 import HuggingFace
@@ -138,15 +137,18 @@ final class MLXModelStore {
 
         try preflightDiskSpace(for: modelID)
 
-        // Drive the download through EmbedderModelFactory — same
-        // code path the embed actor (A3) will use later. We don't
-        // need the resulting container yet, just the side-effect of
-        // files landing in the hub cache.
+        // Use MLXLMCommon's `resolve(...)` to drive only the file
+        // download — it routes through the same Downloader the
+        // embed/chat actors will use later, so the cache layout
+        // matches, but it doesn't try to load the architecture into
+        // memory. That way an embedder factory doesn't choke on a
+        // chat / VLM slug, and the progress closure fires for any
+        // model kind.
         do {
-            _ = try await EmbedderModelFactory.shared.loadContainer(
+            _ = try await resolve(
+                configuration: ModelConfiguration(id: modelID),
                 from: downloader,
-                using: tokenizerLoader,
-                configuration: ModelConfiguration(id: modelID)
+                useLatest: false
             ) { @Sendable progress in
                 Task { @MainActor in
                     progressHandler(progress.fractionCompleted)
