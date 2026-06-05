@@ -26,6 +26,28 @@ enum MLXModelCatalog {
         /// Short, neutral, one-line description (no marketing
         /// fluff). Shown under the model name.
         let summary: String
+        /// Multimodal (vision + text) when true. Loaded via
+        /// `VLMModelFactory` instead of `LLMModelFactory`. Defaults
+        /// to false — text-only chat models are the common case.
+        let isVision: Bool
+
+        init(
+            id: String,
+            displayName: String,
+            kind: Kind,
+            dimension: Int?,
+            sizeBytes: Int64,
+            summary: String,
+            isVision: Bool = false
+        ) {
+            self.id = id
+            self.displayName = displayName
+            self.kind = kind
+            self.dimension = dimension
+            self.sizeBytes = sizeBytes
+            self.summary = summary
+            self.isVision = isVision
+        }
     }
 
     /// Order matters — first entry is the recommended default for
@@ -90,6 +112,37 @@ enum MLXModelCatalog {
             dimension: nil,
             sizeBytes: 750 * 1024 * 1024,
             summary: "Très léger (~750 Mo). Pour tester le pipeline ou un Mac 8 Go."
+        ),
+
+        // Vision-language models (VLM) — loaded via VLMModelFactory.
+        // Accept text-only inputs too; image attachments arrive when
+        // the chat view exposes a picker (Phase D follow-up).
+        .init(
+            id: "mlx-community/gemma-4-e2b-it-4bit",
+            displayName: "Gemma 4 E2B Instruct (4-bit, VLM)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: Int64(1.5 * 1024 * 1024 * 1024),
+            summary: "Multimodal léger (~1,5 Go, 2B effectifs). Idéal pour tester la pipeline VLM.",
+            isVision: true
+        ),
+        .init(
+            id: "mlx-community/gemma-4-e4b-it-4bit",
+            displayName: "Gemma 4 E4B Instruct (4-bit, VLM)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: Int64(2.5 * 1024 * 1024 * 1024),
+            summary: "Multimodal quotidien (~2,5 Go, 4B effectifs). Bon défaut VLM sur Mac 16 Go.",
+            isVision: true
+        ),
+        .init(
+            id: "mlx-community/gemma-4-26b-a4b-it-4bit",
+            displayName: "Gemma 4 26B/A4B Instruct (4-bit, VLM)",
+            kind: .chat,
+            dimension: nil,
+            sizeBytes: 13 * 1024 * 1024 * 1024,
+            summary: "Multimodal sparse 26B/4B-actifs (~13 Go). Qualité supérieure, Mac 32 Go+.",
+            isVision: true
         ),
     ]
 

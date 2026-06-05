@@ -99,8 +99,18 @@ struct MLXSettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.displayName)
-                        .font(Brand.Fonts.body(13).weight(.medium))
+                    HStack(spacing: 6) {
+                        Text(model.displayName)
+                            .font(Brand.Fonts.body(13).weight(.medium))
+                        if model.isVision {
+                            Text("VLM")
+                                .font(Brand.Fonts.mono(10).weight(.medium))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
                     Text(model.summary)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)

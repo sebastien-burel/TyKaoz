@@ -1,6 +1,7 @@
 import Foundation
 import MLXLMCommon
 import MLXLLM
+import MLXVLM
 import MLXHuggingFace
 import HuggingFace
 import Tokenizers
@@ -161,13 +162,27 @@ actor MLXChatActor {
     private func loadIfNeeded() async throws -> ModelContainer {
         if let container { return container }
         _ = try await MLXModelStore.shared.download(modelID: modelID)
-        let loaded = try await LLMModelFactory.shared.loadContainer(
-            from: downloader,
-            using: tokenizerLoader,
-            configuration: ModelConfiguration(id: modelID)
-        ) { _ in
-            // Load-time progress not surfaced — the download
-            // step above already drove the progress bar.
+
+        // Route on the catalog flag: VLM entries go through
+        // VLMModelFactory (which knows about vision towers +
+        // image processors), text-only chat through LLMModelFactory.
+        // Custom (off-catalog) IDs default to LLM — covers the
+        // common case and gives a clear error otherwise.
+        let isVision = MLXModelCatalog.entry(forID: modelID)?.isVision ?? false
+        let config = ModelConfiguration(id: modelID)
+        let loaded: ModelContainer
+        if isVision {
+            loaded = try await VLMModelFactory.shared.loadContainer(
+                from: downloader,
+                using: tokenizerLoader,
+                configuration: config
+            ) { _ in }
+        } else {
+            loaded = try await LLMModelFactory.shared.loadContainer(
+                from: downloader,
+                using: tokenizerLoader,
+                configuration: config
+            ) { _ in }
         }
         container = loaded
         await MLXModelStore.shared.touch(modelID: modelID)

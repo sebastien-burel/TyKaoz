@@ -19,6 +19,7 @@
 		32B9B92D2FD29145007412B7 /* MLXHuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92C2FD29145007412B7 /* MLXHuggingFace */; };
 		32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92F2FD29174007412B7 /* HuggingFace */; };
 		32B9B9332FD2919E007412B7 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9322FD2919E007412B7 /* Tokenizers */; };
+		32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9BABC2FD2B403007412B7 /* MLXVLM */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -78,6 +79,7 @@
 				32B9B9192FD28D96007412B7 /* MLX in Frameworks */,
 				326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */,
 				32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */,
+				32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */,
 				7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */,
 				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
 				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
@@ -162,6 +164,7 @@
 				32B9B92C2FD29145007412B7 /* MLXHuggingFace */,
 				32B9B92F2FD29174007412B7 /* HuggingFace */,
 				32B9B9322FD2919E007412B7 /* Tokenizers */,
+				32B9BABC2FD2B403007412B7 /* MLXVLM */,
 			);
 			productName = TySkaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TySkaoz.app */;
@@ -819,6 +822,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */;
 			productName = Tokenizers;
+		};
+		32B9BABC2FD2B403007412B7 /* MLXVLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXVLM;
 		};
 		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
