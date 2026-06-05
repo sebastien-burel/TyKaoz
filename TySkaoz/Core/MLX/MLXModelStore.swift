@@ -179,12 +179,26 @@ final class MLXModelStore {
     }
 
     /// Runs `body` (typically the `resolve(...)` call) while a
-    /// sibling task polls `sizeOnDisk(modelID:)` and reports
-    /// progress every 250 ms. The poll task is always cancelled on
-    /// exit (success, throw, or task cancellation upstream). When
-    /// `expected` is zero (off-catalog slug) the handler stays at
-    /// 0 % during the download and snaps to 100 % at the end —
-    /// honest about the missing reference rather than guessing.
+    /// sibling task polls download progress every 250 ms. The poll
+    /// combines two sources:
+    ///
+    /// - `sizeOnDisk(modelID:)` — the HF cache's `blobs/<hash>`
+    ///   directory, populated only after each file's atomic move.
+    ///   Catches small files (configs, tokenizer) that finish
+    ///   quickly enough to land before the next poll tick.
+    /// - `inFlightDownloadBytes()` — URLSession writes to
+    ///   `CFNetworkDownload_*.tmp` files under the sandbox temp
+    ///   dir during the actual transfer. Bigger files (LFS
+    ///   safetensors) only show up here until the move finalises.
+    ///
+    /// Summing them gives a monotone "bytes in flight or landed"
+    /// signal that tracks the safetensors download in real time
+    /// without depending on swift-huggingface's parent/child
+    /// `Progress` aggregator (which goes near-stale until late in
+    /// the download).
+    ///
+    /// When `expected` is zero (off-catalog slug) the handler stays
+    /// at 0 % during the download and snaps to 100 % at the end.
     private func withPollingProgress(
         modelID: String,
         expected: Int64,
@@ -193,10 +207,13 @@ final class MLXModelStore {
     ) async throws {
         let pollTask = Task<Void, Never> { [weak self] in
             while !Task.isCancelled {
-                let size = self?.sizeOnDisk(modelID: modelID) ?? 0
+                guard let self else { return }
+                let landed = self.sizeOnDisk(modelID: modelID)
+                let inFlight = self.inFlightDownloadBytes()
+                let total = landed + inFlight
                 let frac: Double
                 if expected > 0 {
-                    frac = min(Double(size) / Double(expected), 0.99)
+                    frac = min(Double(total) / Double(expected), 0.99)
                 } else {
                     frac = 0
                 }
@@ -207,6 +224,35 @@ final class MLXModelStore {
         defer { pollTask.cancel() }
         try await body()
         await MainActor.run { handler(1.0) }
+    }
+
+    /// Sums all `CFNetworkDownload_*.tmp` files in the sandbox temp
+    /// directory — URLSession's `downloadTask` writes its stream
+    /// there until the response completes, at which point swift-
+    /// huggingface moves the file into the HF cache. Polling this
+    /// dir lets us see the safetensors download progress in real
+    /// time instead of waiting for the atomic-rename jump.
+    private func inFlightDownloadBytes() -> Int64 {
+        let fm = FileManager.default
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        guard let entries = try? fm.contentsOfDirectory(
+            at: tmp,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+
+        var total: Int64 = 0
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard name.hasPrefix("CFNetworkDownload_"),
+                  name.hasSuffix(".tmp") else { continue }
+            if let values = try? entry.resourceValues(
+                forKeys: [.fileSizeKey, .isRegularFileKey]
+            ), values.isRegularFile == true {
+                total += Int64(values.fileSize ?? 0)
+            }
+        }
+        return total
     }
 
     // MARK: - Cache management
