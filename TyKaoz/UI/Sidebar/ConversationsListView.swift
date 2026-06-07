@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ConversationsListView: View {
     @Environment(ConversationStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
     @Binding var selection: Conversation.ID?
 
     @State private var editingID: Conversation.ID?
@@ -26,7 +27,9 @@ struct ConversationsListView: View {
             Divider()
 
             HStack {
-                SettingsLink {
+                Button {
+                    openWindow(id: TyKaozApp.settingsWindowID)
+                } label: {
                     Label("Réglages", systemImage: "gearshape")
                         .font(Brand.Fonts.body(12))
                         .foregroundStyle(Brand.Colors.slate)

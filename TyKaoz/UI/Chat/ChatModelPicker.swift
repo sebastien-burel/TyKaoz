@@ -4,6 +4,7 @@ import SwiftUI
 /// in one gesture, listing only the models they've enabled per provider.
 struct ChatModelPicker: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         Menu {
@@ -13,7 +14,9 @@ struct ChatModelPicker: View {
 
             Divider()
 
-            SettingsLink {
+            Button {
+                openWindow(id: TyKaozApp.settingsWindowID)
+            } label: {
                 Label("Gérer les modèles…", systemImage: "gearshape")
             }
         } label: {

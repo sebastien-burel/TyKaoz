@@ -23,6 +23,13 @@ struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
+        CommandGroup(replacing: .appSettings) {
+            Button("Réglages…") {
+                openWindow(id: TyKaozApp.settingsWindowID)
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("Nouvelle conversation") {
                 newConversation?()

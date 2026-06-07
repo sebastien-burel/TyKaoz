@@ -9,6 +9,11 @@ struct TyKaozApp: App {
     /// Wiki browser window — opened via Cmd-Shift-K or the View menu.
     static let wikiWindowID = "wiki"
 
+    /// Settings window — opened via Cmd-, (see AppCommands). A regular
+    /// `Window` rather than the `Settings` scene so it stays resizable and
+    /// free of the preferences-window margins.
+    static let settingsWindowID = "settings"
+
     @State private var settings = AppSettings()
     @State private var conversationStore = ConversationStore()
     @State private var fileSpaceStore = FileSpaceStore()
@@ -63,7 +68,7 @@ struct TyKaozApp: App {
             AppCommands()
         }
 
-        Settings {
+        Window("Réglages", id: Self.settingsWindowID) {
             SettingsPanelView()
                 .environment(settings)
                 .environment(fileSpaceStore)
@@ -73,6 +78,8 @@ struct TyKaozApp: App {
                 .environment(mlxDownloads)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
+        .defaultSize(width: 860, height: 600)
+        .windowResizability(.contentMinSize)
 
         WindowGroup(id: Self.wikiWindowID) {
             WikiBrowserView()
