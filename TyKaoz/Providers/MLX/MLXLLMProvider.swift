@@ -6,7 +6,7 @@ import Foundation
 /// per-model `MLXChatActor`.
 struct MLXLLMProvider: LLMProvider {
     let id: String = "mlx"
-    let displayName: String = "MLX (local)"
+    let displayName: String = "Sur ce Mac"
     let modelID: String
 
     init(modelID: String) {
@@ -24,7 +24,7 @@ struct MLXLLMProvider: LLMProvider {
         }
         return .unavailable(reason: """
         Modèle « \(modelID) » pas encore téléchargé. Va dans \
-        Réglages → MLX (local) → bouton « Télécharger ».
+        Réglages → Sur ce Mac → bouton « Télécharger ».
         """)
     }
 

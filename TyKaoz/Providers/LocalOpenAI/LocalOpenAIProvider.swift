@@ -6,7 +6,7 @@ import Foundation
 /// model list comes from `/v1/models` like any cloud OpenAI host.
 struct LocalOpenAIProvider: LLMProvider {
     let id: String = "localOpenAI"
-    let displayName: String = "Local OpenAI"
+    let displayName: String = "Compatible OpenAI"
 
     let baseURL: URL
     let apiKey: String
