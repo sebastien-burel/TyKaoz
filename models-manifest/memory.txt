@@ -1,0 +1,15 @@
+TyKaoz/gemma-4-E2B-it-4bit : Mémoire mesurée — résident 3,2 GB · pic 3,25 GB
+TyKaoz/gemma-4-E2B-it-6bit : Mémoire mesurée — résident 3,85 GB · pic 3,9 GB
+TyKaoz/gemma-4-E2B-it-8bit : Mémoire mesurée — résident 4,92 GB · pic 4,98 GB
+TyKaoz/gemma-4-E4B-it-4bit : Mémoire mesurée — résident 4,29 GB · pic 4,35 GB
+TyKaoz/gemma-4-E4B-it-6bit : Mémoire mesurée — résident 6,47 GB · pic 6,52 GB
+TyKaoz/gemma-4-E4B-it-8bit : Mémoire mesurée — résident 7,78 GB · pic 7,84 GB
+TyKaoz/gemma-4-26B-A4B-it-4bit : Mémoire mesurée — résident 14,29 GB · pic 14,36 GB
+TyKaoz/gemma-4-26B-A4B-it-6bit : Mémoire mesurée — résident 20,16 GB · pic 20,23 GB
+TyKaoz/gemma-4-26B-A4B-it-8bit : Mémoire mesurée — résident 26,04 GB · pic 26,1 GB
+TyKaoz/Qwen3.6-35B-A3B-4bit : Mémoire mesurée — résident 19,43 GB · pic 19,63 GB
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-4bit : Mémoire mesurée — résident 12,78 GB · pic 12,84 GB
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-6bit : Mémoire mesurée — résident 18,27 GB · pic 18,32 GB
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-8bit : Mémoire mesurée — résident 23,76 GB · pic 23,81 GB
+LiquidAI/LFM2.5-8B-A1B-MLX-4bit : Mémoire mesurée — résident 4,5 GB · pic 4,53 GB
+LiquidAI/LFM2.5-8B-A1B-MLX-8bit : Mémoire mesurée — résident 8,81 GB · pic 8,84 GB

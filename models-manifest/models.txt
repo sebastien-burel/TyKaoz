@@ -1,0 +1,17 @@
+TyKaoz/bge-m3-4bit
+TyKaoz/bge-m3-6bit
+TyKaoz/bge-m3-8bit
+TyKaoz/gemma-4-E2B-it-4bit
+TyKaoz/gemma-4-E2B-it-6bit
+TyKaoz/gemma-4-E2B-it-8bit
+TyKaoz/gemma-4-E4B-it-4bit
+TyKaoz/gemma-4-E4B-it-6bit
+TyKaoz/gemma-4-E4B-it-8bit
+TyKaoz/gemma-4-26B-A4B-it-4bit
+TyKaoz/gemma-4-26B-A4B-it-6bit
+TyKaoz/gemma-4-26B-A4B-it-8bit
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-4bit
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-6bit
+TyKaoz/Mistral-Small-3.2-24B-Instruct-2506-8bit
+LiquidAI/LFM2.5-8B-A1B-MLX-4bit
+LiquidAI/LFM2.5-8B-A1B-MLX-8bit
