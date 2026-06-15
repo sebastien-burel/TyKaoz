@@ -7,6 +7,26 @@ enum ModelHeuristic {
 
     static func isLikelyChatModel(id: String, provider: ProviderID) -> Bool {
         let lower = id.lowercased()
+        // Gemini image-generation models (e.g. gemini-2.5-flash-image) run
+        // through the normal chat `generateContent` endpoint, so they're
+        // usable here despite the "image" substring. Imagen / DALL·E (their
+        // own `predict`/images endpoints) stay hidden.
+        if provider == .google, lower.contains("gemini"), lower.contains("image") {
+            return true
+        }
+        // OpenAI image-generation models (gpt-image-1, dall-e) are usable
+        // via the Images API in the chat view.
+        if provider == .openai, lower.contains("gpt-image") || lower.contains("dall-e") {
+            return true
+        }
+        // Qwen text-to-image models (DashScope native endpoint).
+        if provider == .qwen, lower.contains("qwen-image") || lower.hasPrefix("wan") {
+            return true
+        }
+        // z.ai CogView text-to-image models (OpenAI-style images endpoint).
+        if provider == .zai, lower.contains("cogview") {
+            return true
+        }
         switch provider {
         case .ollama, .mistral, .openai, .anthropic, .google, .deepseek, .qwen, .zai, .localOpenAI, .mlx:
             return !nonChatHints.contains(where: lower.contains)

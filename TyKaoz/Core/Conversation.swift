@@ -55,7 +55,8 @@ struct Conversation: Identifiable, Hashable, Codable {
             }
 
             if let finalIdx = collected.lastIndex(where: {
-                $0.role == .assistant && !$0.content.isEmpty
+                $0.role == .assistant
+                    && (!$0.content.isEmpty || !($0.attachments ?? []).isEmpty)
             }) {
                 let final = collected[finalIdx]
                 let intermediates = Array(collected[..<finalIdx])

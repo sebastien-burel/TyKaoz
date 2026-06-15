@@ -37,6 +37,33 @@ struct ModelHeuristicTests {
     }
 
     @Test
+    func geminiImageGenModelsPassButImagenAndDallEDoNot() {
+        // Gemini image-gen runs through the chat endpoint → usable.
+        #expect(ModelHeuristic.isLikelyChatModel(id: "gemini-2.5-flash-image", provider: .google))
+        #expect(ModelHeuristic.isLikelyChatModel(id: "gemini-3.1-flash-image", provider: .google))
+        // Imagen uses its own endpoint → stays hidden.
+        #expect(!ModelHeuristic.isLikelyChatModel(id: "imagen-4.0-generate-001", provider: .google))
+    }
+
+    @Test
+    func openAIImageGenModelsPass() {
+        // gpt-image-1 / dall-e are usable via the Images API in the chat view.
+        #expect(ModelHeuristic.isLikelyChatModel(id: "gpt-image-1", provider: .openai))
+        #expect(ModelHeuristic.isLikelyChatModel(id: "dall-e-3", provider: .openai))
+        // But not embeddings.
+        #expect(!ModelHeuristic.isLikelyChatModel(id: "text-embedding-3-large", provider: .openai))
+    }
+
+    @Test
+    func textToImageModelsPassForQwenAndZai() {
+        #expect(ModelHeuristic.isLikelyChatModel(id: "qwen-image-max", provider: .qwen))
+        #expect(ModelHeuristic.isLikelyChatModel(id: "cogview-4-250304", provider: .zai))
+        // The exemption is provider-scoped: a "*-image" id under a provider
+        // without an exemption stays hidden (the "image" hint applies).
+        #expect(!ModelHeuristic.isLikelyChatModel(id: "qwen-image-max", provider: .deepseek))
+    }
+
+    @Test
     func appleAlwaysTrue() {
         #expect(ModelHeuristic.isLikelyChatModel(id: "anything", provider: .apple))
     }

@@ -177,9 +177,12 @@ private struct ProvidersSidebar: View {
             return (settings.localOpenAIBaseURL != nil && settings.localOpenAIModel?.isEmpty == false)
                 ? .green : .gray
         case .mlx:
-            // No persistent "active model" for MLX yet — chat support
-            // lands in Phase C. Stay neutral until then.
-            return .gray
+            // Green once a chat model is on disk — no API key to check,
+            // availability is "a usable model is downloaded".
+            let hasChatModel = ModelCatalogService.shared.chats.contains {
+                MLXModelStore.shared.isInstalled(modelID: $0.id)
+            }
+            return hasChatModel ? .green : .gray
         case .mistral:
             return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
                 ? .green : .gray

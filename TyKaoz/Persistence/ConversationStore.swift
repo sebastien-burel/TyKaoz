@@ -57,6 +57,34 @@ final class ConversationStore {
         saveTasks[id]?.cancel()
         saveTasks[id] = nil
         try? FileManager.default.removeItem(at: fileURL(for: id))
+        try? FileManager.default.removeItem(at: attachmentsDirectory(for: id))
+    }
+
+    // MARK: - Attachments
+
+    /// Writes attachment bytes to the conversation's sidecar folder and
+    /// returns the metadata to store on the message. Returns nil if the
+    /// write fails (the caller then skips the attachment rather than
+    /// sending a dangling reference).
+    func saveAttachment(_ data: Data, conversationID: UUID, ext: String) -> Message.Attachment? {
+        let attachment = Message.Attachment(filename: "\(UUID().uuidString).\(ext)")
+        let dir = attachmentsDirectory(for: conversationID)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try data.write(to: dir.appending(path: attachment.filename), options: .atomic)
+            return attachment
+        } catch {
+            return nil
+        }
+    }
+
+    /// Absolute file URL of an attachment on disk.
+    func attachmentURL(conversationID: UUID, _ attachment: Message.Attachment) -> URL {
+        attachmentsDirectory(for: conversationID).appending(path: attachment.filename)
+    }
+
+    private func attachmentsDirectory(for conversationID: UUID) -> URL {
+        directory.appending(path: "attachments/\(conversationID.uuidString)", directoryHint: .isDirectory)
     }
 
     /// Cancels any pending debounced save and flushes immediately. Used by

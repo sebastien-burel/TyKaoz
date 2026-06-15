@@ -150,4 +150,69 @@ struct OpenAICompatibleStreamingTests {
         #expect(toolMsg?["tool_call_id"] as? String == "call_1")
         #expect(toolMsg?["content"] as? String == "2026-05-26T20:00:00Z")
     }
+
+    // MARK: - Image generation
+
+    @Test
+    func detectsImageGenerationModels() {
+        #expect(OpenAICompatibleClient.isImageGenerationModel("gpt-image-1"))
+        #expect(OpenAICompatibleClient.isImageGenerationModel("dall-e-3"))
+        #expect(OpenAICompatibleClient.isImageGenerationModel("cogview-4-250304"))
+        #expect(!OpenAICompatibleClient.isImageGenerationModel("gpt-4o"))
+        #expect(OpenAICompatibleClient.isQwenImageModel("qwen-image-max"))
+        #expect(OpenAICompatibleClient.isQwenImageModel("qwen-image-2.0-pro"))
+        #expect(!OpenAICompatibleClient.isQwenImageModel("qwen-vl-max"))
+    }
+
+    @Test
+    func multipartBodyIncludesFieldsAndImage() throws {
+        let imageURL = FileManager.default.temporaryDirectory
+            .appending(path: "\(UUID().uuidString).png")
+        try Data([0x89, 0x50, 0x4E, 0x47]).write(to: imageURL)
+        defer { try? FileManager.default.removeItem(at: imageURL) }
+
+        let body = OpenAICompatibleClient.multipartBody(
+            boundary: "BNDRY",
+            fields: ["model": "gpt-image-1", "prompt": "ajoute un chapeau"],
+            images: [imageURL])
+        let text = String(decoding: body, as: UTF8.self)
+        #expect(text.contains("name=\"model\""))
+        #expect(text.contains("gpt-image-1"))
+        #expect(text.contains("name=\"prompt\""))
+        #expect(text.contains("name=\"image[]\""))
+        #expect(text.contains("Content-Type: image/png"))
+        #expect(text.contains("--BNDRY--"))
+    }
+
+    @Test
+    func parsesQwenImageURL() {
+        let json = #"{"output":{"choices":[{"message":{"role":"assistant","content":[{"image":"https://oss.example/cat.png?Expires=1"}]}}]}}"#
+        let url = OpenAICompatibleClient.parseQwenImageURL(Data(json.utf8))
+        #expect(url == "https://oss.example/cat.png?Expires=1")
+    }
+
+    @Test
+    func imageModelEmitsImageOutput() async throws {
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47])  // PNG magic
+        let json = #"{"data":[{"b64_json":"\#(bytes.base64EncodedString())"}]}"#
+        let session = MockURLProtocol.session(data: Data(json.utf8), status: 200)
+        let client = OpenAICompatibleClient(
+            baseURL: URL(string: "https://api.openai.com/v1")!, apiKey: "k", session: session)
+
+        var events: [StreamEvent] = []
+        for try await event in client.chat(
+            model: "gpt-image-1",
+            messages: [ChatMessage(role: .user, content: "dessine un chat")],
+            tools: []) {
+            events.append(event)
+        }
+
+        let images = events.compactMap { event -> (Data, String)? in
+            if case .imageOutput(let data, let mime) = event { return (data, mime) }
+            return nil
+        }
+        #expect(images.count == 1)
+        #expect(images.first?.0 == bytes)
+        #expect(images.first?.1 == "image/png")
+    }
 }

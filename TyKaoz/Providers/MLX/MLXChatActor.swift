@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MLXLMCommon
 import MLXLLM
 import MLXVLM
@@ -86,23 +87,26 @@ actor MLXChatActor {
                     // ships different ones (`<|tool_call>`,
                     // `<tool_call|>`, `<|"|>`). Until mlx-swift-lm
                     // catches up we splice in a tiny parser.
+                    // Pick the streaming marker set for this model:
+                    // Gemma 4 needs its tool-call + channel envelopes
+                    // spliced out; everything else (Qwen 3, DeepSeek-R1…)
+                    // emits `<think>` reasoning tags. Either way the
+                    // buffered parser strips them from the answer.
                     let needsGemma4 = modelID.localizedCaseInsensitiveContains("gemma-4")
                         || modelID.localizedCaseInsensitiveContains("gemma4")
-                    var gemma4Buffer = ""
+                    let blocks = needsGemma4 ? Self.gemma4Blocks : Self.thinkBlocks
+                    var streamBuffer = ""
 
                     for await event in stream {
                         if Task.isCancelled { break }
                         switch event {
                         case .chunk(let text):
-                            if needsGemma4 {
-                                Self.processGemma4Chunk(
-                                    text,
-                                    buffer: &gemma4Buffer,
-                                    continuation: continuation
-                                )
-                            } else {
-                                continuation.yield(.textDelta(text))
-                            }
+                            Self.processStreamChunk(
+                                text,
+                                blocks: blocks,
+                                buffer: &streamBuffer,
+                                continuation: continuation
+                            )
                         case .toolCall(let call):
                             // MLX `ToolCall` has no id; synthesise
                             // one so TyKaoz's ChatSession can route
@@ -125,12 +129,11 @@ actor MLXChatActor {
                             break
                         }
                     }
-                    if needsGemma4, !gemma4Buffer.isEmpty {
-                        // Flush whatever remains: either a leftover
-                        // half-marker that turned out to be literal
-                        // text, or a malformed tool call. Emit as
-                        // text so we don't swallow content.
-                        continuation.yield(.textDelta(gemma4Buffer))
+                    if !streamBuffer.isEmpty {
+                        // Flush whatever remains: a leftover half-marker
+                        // that turned out to be literal text, or trailing
+                        // content. Emit as text so we don't swallow it.
+                        continuation.yield(.textDelta(streamBuffer))
                     }
                     lastUsedAt = Date()
                     scheduleIdleUnload()
@@ -156,6 +159,57 @@ actor MLXChatActor {
         idleUnloadTask?.cancel()
         idleUnloadTask = nil
         container = nil
+    }
+
+    /// Unloads every loaded chat container — the manual "décharger"
+    /// command. Each container drop releases its GPU buffers; call
+    /// `MLX.GPU.clearCache()` afterwards to return the freed memory
+    /// to the system rather than keeping it in MLX's buffer cache.
+    @MainActor
+    static func unloadAll() async {
+        for actor in instances.values { await actor.unload() }
+    }
+
+    // MARK: - Memory probe
+
+    /// Real-conditions memory footprint of a loaded model, in bytes of
+    /// Metal/unified memory. `resident` is the active allocation right
+    /// after load (≈ the quantised weights, the dominant term for the
+    /// RAM floor); `peak` is the high-water mark across the probe
+    /// generation (weights + KV cache + activations).
+    struct MemoryReport: Sendable {
+        let residentBytes: Int
+        let peakBytes: Int
+    }
+
+    /// Loads the model (downloading first if needed) and runs a short
+    /// canned generation, measuring what MLX actually allocates. This
+    /// is the truthful way to size `min/recommended_ram_gb` instead of
+    /// estimating from the on-disk weight size.
+    ///
+    /// Caveat: the probe prompt is **text-only**. For a VLM the vision
+    /// tower isn't exercised, so attaching an image at chat time pushes
+    /// the real peak higher than what this reports.
+    func measureMemory() async throws -> MemoryReport {
+        idleUnloadTask?.cancel()
+        idleUnloadTask = nil
+
+        MLX.GPU.resetPeakMemory()
+        let container = try await loadIfNeeded()
+        let resident = MLX.Memory.activeMemory
+
+        let input = UserInput(chat: [.user("Présente-toi en une phrase.")])
+        let lmInput = try await container.prepare(input: input)
+        let params = GenerateParameters(maxTokens: 64, temperature: 0.7)
+        let stream = try await container.generate(input: lmInput, parameters: params)
+        for await _ in stream {
+            if Task.isCancelled { break }
+        }
+        let peak = MLX.Memory.peakMemory
+
+        lastUsedAt = Date()
+        scheduleIdleUnload()
+        return MemoryReport(residentBytes: resident, peakBytes: peak)
     }
 
     // MARK: - Idle unload
@@ -189,13 +243,24 @@ actor MLXChatActor {
         if let container { return container }
         _ = try await MLXModelStore.shared.download(modelID: modelID)
 
+        // A chat model with no chat template would make swift-transformers
+        // fall back to raw-text formatting and then hard-crash
+        // (`fatalError` on an unmapped token) during encoding — not
+        // catchable. Refuse with a clear message instead of taking the
+        // whole app down. We check the same places the loader does.
+        if let dir = await MLXModelStore.shared.localDirectory(modelID: modelID),
+           !Self.hasChatTemplate(in: dir) {
+            throw ChatError.missingChatTemplate(modelID: modelID)
+        }
+
         // Route on the catalog flag: VLM entries go through
         // VLMModelFactory (which knows about vision towers +
         // image processors), text-only chat through LLMModelFactory.
         // Custom (off-catalog) IDs default to LLM — covers the
         // common case and gives a clear error otherwise.
-        let isVision = MLXModelCatalog.entry(forID: modelID)?.isVision ?? false
-        let config = ModelConfiguration(id: modelID)
+        let entry = await ModelCatalogService.shared.entry(forID: modelID)
+        let isVision = entry?.isVision ?? false
+        let config = ModelConfiguration(id: modelID, revision: entry?.revision ?? "main")
         let loaded: ModelContainer
         if isVision {
             loaded = try await VLMModelFactory.shared.loadContainer(
@@ -228,6 +293,40 @@ actor MLXChatActor {
         return loaded
     }
 
+    enum ChatError: LocalizedError {
+        case missingChatTemplate(modelID: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingChatTemplate(let modelID):
+                return """
+                « \(modelID) » n'inclut pas de chat template \
+                (ni `chat_template` dans `tokenizer_config.json`, ni \
+                fichier `chat_template.jinja`). Ce modèle n'est pas \
+                utilisable tel quel — re-quantifie le repo en y incluant \
+                le template.
+                """
+            }
+        }
+    }
+
+    /// True when the model directory carries a chat template in one of
+    /// the places the loader looks: a standalone `chat_template.jinja`
+    /// (Gemma ships it this way) or a `chat_template` field inside
+    /// `tokenizer_config.json`. Without either, message formatting falls
+    /// back to raw text and the tokenizer fatal-errors on encode.
+    private static func hasChatTemplate(in dir: URL) -> Bool {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: dir.appendingPathComponent("chat_template.jinja").path) {
+            return true
+        }
+        let tcURL = dir.appendingPathComponent("tokenizer_config.json")
+        guard let data = try? Data(contentsOf: tcURL),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        return obj["chat_template"] != nil
+    }
+
     // MARK: - Mapping
 
     /// Converts TyKaoz's ChatMessage history into MLX's Chat.Message.
@@ -236,12 +335,23 @@ actor MLXChatActor {
     /// the call as JSON inside an assistant message. The model's chat
     /// template re-parses this. Tool results map cleanly to `.tool(...)`.
     private static func mapMessages(_ messages: [ChatMessage]) -> [Chat.Message] {
-        messages.compactMap { msg in
+        // Gemma 4 in mlx-swift-lm only supports a SINGLE image per prompt:
+        // its token check compares total image placeholders to the
+        // per-image soft-token count, so two images (e.g. one per turn,
+        // accumulated in history) throw a mismatch. Keep only the most
+        // recent image across the whole prompt, capped to one.
+        let imageIndex = messages.lastIndex { !$0.imageURLs.isEmpty }
+        return messages.enumerated().compactMap { index, msg in
             switch msg.role {
             case .system:
                 return .system(msg.content)
             case .user:
-                return .user(msg.content)
+                // Attach the single kept image (VLM): UserInput loads it
+                // from its file URL. Non-VLM models never get images here.
+                let images = (index == imageIndex)
+                    ? msg.imageURLs.prefix(1).map { UserInput.Image.url($0) }
+                    : []
+                return .user(msg.content, images: images)
             case .assistant:
                 return .assistant(msg.content)
             case .toolCall:
@@ -267,50 +377,64 @@ actor MLXChatActor {
     /// - When `inCall == true`, `buffer` holds the entire span from
     ///   the open marker forward, waiting for the close marker so
     ///   the payload can be parsed atomically.
-    /// Inline tokens Gemma 4 emits that the chat template fails
-    /// to suppress. Each entry pairs the open markers with their
-    /// close marker and how the content between should be routed:
+    /// How the content between a pair of markers should be routed:
     /// `.toolCall` runs through `parseGemma4Payload`; `.reasoning`
     /// goes out as `.reasoningDelta` (kept for round-trip, not
     /// rendered in the chat view); `.suppress` is dropped.
-    private enum Gemma4BlockKind {
+    private enum StreamBlockKind {
         case toolCall
         case reasoning
         case suppress
     }
-    private struct Gemma4Block {
+    /// A marker-delimited span the streaming parser recognises: any of
+    /// `opens` starts it, any of `closes` ends it, `kind` says where it
+    /// goes. Multiple closes let one envelope accept several wire formats.
+    private struct StreamBlock {
         let opens: [String]
-        let close: String
-        let kind: Gemma4BlockKind
+        let closes: [String]
+        let kind: StreamBlockKind
     }
-    private static let gemma4Blocks: [Gemma4Block] = [
-        // Tool call envelopes (two open forms, single close form).
-        Gemma4Block(
+    /// Inline tokens Gemma 4 emits that its chat template fails to
+    /// suppress — tool-call envelopes and internal-monologue channels.
+    private static let gemma4Blocks: [StreamBlock] = [
+        // Tool-call envelopes. Gemma 4 emits two shapes depending on the
+        // model: its native `call:NAME{…}` closed by `<tool_call|>`, and
+        // (notably the 26B) the Hermes-style `{"name":…}` closed by
+        // `</tool_call>`. Accept both close forms.
+        StreamBlock(
             opens: ["<|tool_call>", "<tool_call>"],
-            close: "<tool_call|>",
+            closes: ["<tool_call|>", "</tool_call>"],
             kind: .toolCall
         ),
         // Inline channel marker — Gemma 4 uses these to label
         // internal monologue. Surface as reasoning so the next
         // round can carry it back if needed; the chat view drops
         // `.reasoningDelta` events from display.
-        Gemma4Block(
+        StreamBlock(
             opens: ["<|channel>"],
-            close: "<channel|>",
+            closes: ["<channel|>"],
             kind: .reasoning
         ),
     ]
+    /// Reasoning tags used by Qwen 3, DeepSeek-R1, QwQ and friends.
+    /// The `<think>…</think>` span is the model's chain of thought —
+    /// route it to reasoning so it doesn't leak into the answer.
+    private static let thinkBlocks: [StreamBlock] = [
+        StreamBlock(opens: ["<think>"], closes: ["</think>"], kind: .reasoning),
+    ]
 
-    /// Streaming-aware Gemma 4 marker stripper. The active block
-    /// (if any) is encoded in the buffer's prefix — when the buffer
-    /// starts with one of the known open markers, we're inside
-    /// that block. No separate state variable needed.
-    private static func processGemma4Chunk(
+    /// Streaming-aware marker stripper. The active block (if any) is
+    /// encoded in the buffer's prefix — when the buffer starts with one
+    /// of the known open markers, we're inside that block. No separate
+    /// state variable needed. `blocks` is the marker set for the current
+    /// model (Gemma 4 envelopes, or generic `<think>` tags).
+    private static func processStreamChunk(
         _ text: String,
+        blocks: [StreamBlock],
         buffer: inout String,
         continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
     ) {
-        let allOpens = gemma4Blocks.flatMap(\.opens)
+        let allOpens = blocks.flatMap(\.opens)
         let maxOpenLen = allOpens.map(\.count).max() ?? 0
         buffer += text
 
@@ -320,8 +444,8 @@ actor MLXChatActor {
         while true {
             // Figure out whether we're already inside a block (the
             // buffer starts with one of the known open markers).
-            var activeBlock: (Gemma4Block, String)? = nil
-            for block in gemma4Blocks {
+            var activeBlock: (StreamBlock, String)? = nil
+            for block in blocks {
                 for open in block.opens where buffer.hasPrefix(open) {
                     activeBlock = (block, open)
                     break
@@ -330,14 +454,22 @@ actor MLXChatActor {
             }
 
             if let (block, openMarker) = activeBlock {
-                // Inside a block — look for its close marker.
-                guard let closeRange = buffer.range(of: block.close) else {
+                // Inside a block — look for the earliest of its close
+                // markers (an envelope may accept several wire formats).
+                var closeRange: Range<String.Index>? = nil
+                for close in block.closes {
+                    if let range = buffer.range(of: close),
+                       closeRange == nil || range.lowerBound < closeRange!.lowerBound {
+                        closeRange = range
+                    }
+                }
+                guard let closeRange else {
                     // No close yet; keep buffering.
                     return
                 }
                 let payloadStart = buffer.index(buffer.startIndex, offsetBy: openMarker.count)
                 let payload = String(buffer[payloadStart..<closeRange.lowerBound])
-                emitGemma4Block(block.kind, payload: payload, raw: String(buffer[..<closeRange.upperBound]), continuation: continuation)
+                emitStreamBlock(block.kind, payload: payload, raw: String(buffer[..<closeRange.upperBound]), continuation: continuation)
                 buffer = String(buffer[closeRange.upperBound...])
             } else {
                 // Outside any block — scan for the earliest open
@@ -373,9 +505,9 @@ actor MLXChatActor {
         }
     }
 
-    /// Routes a closed Gemma 4 block to the right `StreamEvent`.
-    private static func emitGemma4Block(
-        _ kind: Gemma4BlockKind,
+    /// Routes a closed block to the right `StreamEvent`.
+    private static func emitStreamBlock(
+        _ kind: StreamBlockKind,
         payload: String,
         raw: String,
         continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
@@ -405,6 +537,35 @@ actor MLXChatActor {
             // Eat the whole block silently.
             break
         }
+    }
+
+    /// Test-only: feeds `chunks` through the streaming marker parser
+    /// (mirroring the chat loop, including the end flush) and returns
+    /// the events it emits, so think / channel / tool routing can be
+    /// asserted without a live model. `gemma == true` uses the Gemma 4
+    /// marker set, otherwise the generic `<think>` set.
+    static func collectStreamEventsForTests(_ chunks: [String], gemma: Bool) async -> [StreamEvent] {
+        let blocks = gemma ? gemma4Blocks : thinkBlocks
+        let stream = AsyncThrowingStream<StreamEvent, Error> { continuation in
+            var buffer = ""
+            for chunk in chunks {
+                processStreamChunk(chunk, blocks: blocks, buffer: &buffer, continuation: continuation)
+            }
+            if !buffer.isEmpty { continuation.yield(.textDelta(buffer)) }
+            continuation.finish()
+        }
+        var events: [StreamEvent] = []
+        do {
+            for try await event in stream { events.append(event) }
+        } catch {}
+        return events
+    }
+
+    /// Test-only: the number of images attached to each mapped message,
+    /// in order — verifies a user message's `imageURLs` reach `UserInput`
+    /// without depending on MLX types in the test target.
+    static func mappedImageCountsForTests(_ messages: [ChatMessage]) -> [Int] {
+        mapMessages(messages).map(\.images.count)
     }
 
     /// Test-only re-export so unit tests can hit the parser

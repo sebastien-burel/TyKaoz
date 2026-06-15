@@ -19,18 +19,26 @@ final class ChatSession {
     private(set) var state: State = .idle
 
     @ObservationIgnored private var task: Task<Void, Never>?
+    /// Set per-send so the conversation loop can resolve attachment file
+    /// URLs while building provider history. nil = no attachments in play.
+    @ObservationIgnored private var store: ConversationStore?
 
     func send(
         text: String,
         in conversation: Binding<Conversation>,
         using provider: any LLMProvider,
         tools: ToolRegistry = ToolRegistry(tools: []),
-        memoryContext: String? = nil
+        memoryContext: String? = nil,
+        attachments: [Message.Attachment] = [],
+        store: ConversationStore? = nil
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, state != .streaming else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty, state != .streaming else { return }
 
-        conversation.wrappedValue.messages.append(Message(role: .user, content: trimmed))
+        self.store = store
+        conversation.wrappedValue.messages.append(
+            Message(role: .user, content: trimmed, attachments: attachments.isEmpty ? nil : attachments)
+        )
         state = .streaming
 
         task = Task { [weak self] in
@@ -65,6 +73,14 @@ final class ChatSession {
 
     // MARK: - Internals
 
+    /// Resolves a message's image attachments to on-disk file URLs the
+    /// multimodal provider can load. Empty when there's no store wired or
+    /// the message has no attachments.
+    private func resolveImageURLs(for message: Message, conversationID: UUID) -> [URL] {
+        guard let store, let attachments = message.attachments, !attachments.isEmpty else { return [] }
+        return attachments.map { store.attachmentURL(conversationID: conversationID, $0) }
+    }
+
     /// Multi-round loop: ask the provider for a turn, append text deltas to
     /// the current assistant message and collect any tool calls. If tool
     /// calls came back, execute them, append the toolCall + toolResult
@@ -92,7 +108,8 @@ final class ChatSession {
             defer {
                 if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }),
                    conversation.wrappedValue.messages[idx].content.isEmpty,
-                   (conversation.wrappedValue.messages[idx].reasoningContent ?? "").isEmpty {
+                   (conversation.wrappedValue.messages[idx].reasoningContent ?? "").isEmpty,
+                   (conversation.wrappedValue.messages[idx].attachments ?? []).isEmpty {
                     conversation.wrappedValue.messages.remove(at: idx)
                 }
             }
@@ -103,9 +120,10 @@ final class ChatSession {
             if let memoryContext, !memoryContext.isEmpty {
                 history.append(ChatMessage(role: .system, content: memoryContext))
             }
+            let conversationID = conversation.wrappedValue.id
             history += conversation.wrappedValue.messages
                 .dropLast()
-                .map { ChatMessage($0) }
+                .map { ChatMessage($0, imageURLs: self.resolveImageURLs(for: $0, conversationID: conversationID)) }
 
             var pendingCalls: [(id: String, name: String, args: String, signature: String?)] = []
 
@@ -120,6 +138,20 @@ final class ChatSession {
                     if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
                         let previous = conversation.wrappedValue.messages[idx].reasoningContent ?? ""
                         conversation.wrappedValue.messages[idx].reasoningContent = previous + delta
+                    }
+                case .imageOutput(let data, let mimeType):
+                    // Persist a model-generated image as an attachment on the
+                    // assistant message (needs the store wired via send()).
+                    if let store,
+                       let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
+                        let ext = mimeType.hasSuffix("png") ? "png"
+                            : mimeType.hasSuffix("webp") ? "webp" : "jpg"
+                        if let attachment = store.saveAttachment(
+                            data, conversationID: conversation.wrappedValue.id, ext: ext) {
+                            var atts = conversation.wrappedValue.messages[idx].attachments ?? []
+                            atts.append(attachment)
+                            conversation.wrappedValue.messages[idx].attachments = atts
+                        }
                     }
                 case .toolCall(let id, let name, let argumentsJSON, let signature):
                     pendingCalls.append((id, name, argumentsJSON, signature))

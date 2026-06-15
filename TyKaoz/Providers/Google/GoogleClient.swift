@@ -142,6 +142,11 @@ struct GoogleClient {
                                     thoughtSignature: tc.thoughtSignature
                                 ))
                             }
+                            for img in info.images {
+                                if let data = Data(base64Encoded: img.base64) {
+                                    continuation.yield(.imageOutput(data: data, mimeType: img.mimeType))
+                                }
+                            }
                             if info.done {
                                 continuation.finish()
                                 return
@@ -163,6 +168,11 @@ struct GoogleClient {
                                 thoughtSignature: tc.thoughtSignature
                             ))
                         }
+                        for img in info.images {
+                            if let data = Data(base64Encoded: img.base64) {
+                                continuation.yield(.imageOutput(data: data, mimeType: img.mimeType))
+                            }
+                        }
                     }
                     continuation.finish()
                 } catch {
@@ -178,6 +188,7 @@ struct GoogleClient {
     struct LineInfo: Equatable {
         let textDelta: String?
         let toolCalls: [ToolCallInfo]
+        let images: [ImageInfo]
         let done: Bool
 
         struct ToolCallInfo: Equatable {
@@ -185,6 +196,13 @@ struct GoogleClient {
             let name: String
             let argumentsJSON: String
             let thoughtSignature: String?
+        }
+
+        /// An inline image part: MIME type + base64 payload (decoded in
+        /// `chat` so `parseLine` stays string-only).
+        struct ImageInfo: Equatable {
+            let mimeType: String
+            let base64: String
         }
     }
 
@@ -195,15 +213,15 @@ struct GoogleClient {
     /// concatenated.
     static func parseLine(_ raw: Data) throws -> LineInfo {
         guard let line = String(data: raw, encoding: .utf8) else {
-            return LineInfo(textDelta: nil, toolCalls: [], done: false)
+            return LineInfo(textDelta: nil, toolCalls: [], images: [], done: false)
         }
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed.hasPrefix("data:") else {
-            return LineInfo(textDelta: nil, toolCalls: [], done: false)
+            return LineInfo(textDelta: nil, toolCalls: [], images: [], done: false)
         }
         let payload = trimmed.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
         guard !payload.isEmpty, let data = payload.data(using: .utf8) else {
-            return LineInfo(textDelta: nil, toolCalls: [], done: false)
+            return LineInfo(textDelta: nil, toolCalls: [], images: [], done: false)
         }
 
         let json: Any
@@ -216,7 +234,7 @@ struct GoogleClient {
         guard let dict = json as? [String: Any],
               let candidates = dict["candidates"] as? [[String: Any]],
               let candidate = candidates.first else {
-            return LineInfo(textDelta: nil, toolCalls: [], done: false)
+            return LineInfo(textDelta: nil, toolCalls: [], images: [], done: false)
         }
 
         let content = candidate["content"] as? [String: Any]
@@ -224,10 +242,18 @@ struct GoogleClient {
 
         var collectedText: String? = nil
         var toolCalls: [LineInfo.ToolCallInfo] = []
+        var images: [LineInfo.ImageInfo] = []
 
         for part in parts {
             if let text = part["text"] as? String, !text.isEmpty {
                 collectedText = (collectedText ?? "") + text
+            }
+            // Inline image part (image-generation models). Gemini uses
+            // camelCase `inlineData`; accept snake_case too for safety.
+            if let inline = (part["inlineData"] ?? part["inline_data"]) as? [String: Any],
+               let b64 = inline["data"] as? String, !b64.isEmpty {
+                let mime = (inline["mimeType"] ?? inline["mime_type"]) as? String ?? "image/png"
+                images.append(LineInfo.ImageInfo(mimeType: mime, base64: b64))
             }
             if let fc = part["functionCall"] as? [String: Any] {
                 let name = fc["name"] as? String ?? ""
@@ -249,7 +275,7 @@ struct GoogleClient {
         }
 
         let done = (candidate["finishReason"] as? String) != nil
-        return LineInfo(textDelta: collectedText, toolCalls: toolCalls, done: done)
+        return LineInfo(textDelta: collectedText, toolCalls: toolCalls, images: images, done: done)
     }
 
     // MARK: - Request body
@@ -273,6 +299,12 @@ struct GoogleClient {
             dict["systemInstruction"] = [
                 "parts": [["text": system] as [String: Any]]
             ]
+        }
+
+        // Image-generation models (e.g. gemini-2.5-flash-image) only emit
+        // images when both modalities are requested.
+        if model.lowercased().contains("image") {
+            dict["generationConfig"] = ["responseModalities": ["TEXT", "IMAGE"]]
         }
 
         if !tools.isEmpty {
@@ -308,9 +340,12 @@ struct GoogleClient {
                 i += 1
 
             case .user:
+                // Text part first, then inline image parts (Gemini vision).
+                var parts: [[String: Any]] = [["text": msg.content]]
+                parts.append(contentsOf: ImageContent.geminiParts(for: msg.imageURLs))
                 out.append([
                     "role": "user",
-                    "parts": [["text": msg.content] as [String: Any]]
+                    "parts": parts
                 ])
                 i += 1
 
@@ -319,6 +354,10 @@ struct GoogleClient {
                 if !msg.content.isEmpty {
                     parts.append(["text": msg.content])
                 }
+                // Feed back images the model generated so a follow-up like
+                // "make it blue" can edit the previous result without the
+                // user re-attaching it.
+                parts.append(contentsOf: ImageContent.geminiParts(for: msg.imageURLs))
                 var j = i + 1
                 while j < messages.count, messages[j].role == .toolCall {
                     if let name = messages[j].toolName {

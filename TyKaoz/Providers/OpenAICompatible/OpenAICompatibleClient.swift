@@ -136,6 +136,34 @@ struct OpenAICompatibleClient {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
+                    // Image-generation models (gpt-image-1, dall-e) live on
+                    // the Images API, not /chat/completions. Route them so
+                    // the UX matches Gemini: prompt in, image attachment out.
+                    if Self.isImageGenerationModel(model) {
+                        let images = messages.last { $0.role == .user }?.imageURLs ?? []
+                        let m = model.lowercased()
+                        // OpenAI image models edit an attached image via the
+                        // dedicated /images/edits endpoint; otherwise generate.
+                        if !images.isEmpty, m.contains("gpt-image") || m.contains("dall-e") {
+                            try await runImageEdit(
+                                model: model, messages: messages, images: images,
+                                continuation: continuation)
+                        } else {
+                            try await runImageGeneration(
+                                model: model, messages: messages, continuation: continuation)
+                        }
+                        continuation.finish()
+                        return
+                    }
+                    // Qwen image models use DashScope's native
+                    // multimodal-generation endpoint (not chat completions).
+                    if Self.isQwenImageModel(model) {
+                        try await runQwenImageGeneration(
+                            model: model, messages: messages, continuation: continuation)
+                        continuation.finish()
+                        return
+                    }
+
                     var request = URLRequest(url: baseURL.appending(path: "/chat/completions"))
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -310,6 +338,267 @@ struct OpenAICompatibleClient {
         }
     }
 
+    // MARK: - Image generation (Images API)
+
+    /// True for models served by the OpenAI-style `/images/generations`
+    /// endpoint: OpenAI (gpt-image-1, dall-e) and z.ai CogView. Qwen uses a
+    /// different native endpoint — see `isQwenImageModel`.
+    static func isImageGenerationModel(_ model: String) -> Bool {
+        let m = model.lowercased()
+        return m.contains("gpt-image") || m.contains("dall-e") || m.contains("cogview")
+    }
+
+    /// Generates an image from the last user message via the OpenAI-style
+    /// Images API and emits it as a single `.imageOutput`. Handles both
+    /// `b64_json` (OpenAI) and `url` (z.ai CogView) responses. Non-streaming.
+    private func runImageGeneration(
+        model: String,
+        messages: [ChatMessage],
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) async throws {
+        let prompt = messages.last { $0.role == .user }?.content ?? ""
+        let m = model.lowercased()
+
+        var request = URLRequest(url: baseURL.appending(path: "/images/generations"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.timeoutInterval = 120
+
+        var body: [String: Any] = ["model": model, "prompt": prompt]
+        if m.contains("cogview") {
+            body["size"] = "1024x1024"                 // z.ai CogView
+        } else {
+            body["n"] = 1
+            if m.contains("dall-e") {                  // dall-e needs the flag
+                body["response_format"] = "b64_json"   // gpt-image-1 returns b64 by default
+            }
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAICompatibleError.network(message: "réponse non-HTTP")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let text = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw OpenAICompatibleError.http(
+                status: http.statusCode,
+                body: (text?.isEmpty == false) ? text : nil
+            )
+        }
+
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let first = (json?["data"] as? [[String: Any]])?.first
+        if let b64 = first?["b64_json"] as? String, let imageData = Data(base64Encoded: b64) {
+            continuation.yield(.imageOutput(data: imageData, mimeType: "image/png"))
+        } else if let urlString = first?["url"] as? String, let imageURL = URL(string: urlString) {
+            // CogView returns a temporary URL — fetch the bytes.
+            let imageData: Data
+            do {
+                (imageData, _) = try await session.data(from: imageURL)
+            } catch let urlError as URLError {
+                throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+            }
+            let mime = ["jpg", "jpeg"].contains(imageURL.pathExtension.lowercased())
+                ? "image/jpeg" : "image/png"
+            continuation.yield(.imageOutput(data: imageData, mimeType: mime))
+        } else {
+            throw OpenAICompatibleError.decoding(message: "réponse image sans b64_json ni url")
+        }
+    }
+
+    /// Edits attached image(s) per the prompt via OpenAI's `/images/edits`
+    /// (multipart). gpt-image-1 returns `b64_json`.
+    private func runImageEdit(
+        model: String,
+        messages: [ChatMessage],
+        images: [URL],
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) async throws {
+        let prompt = messages.last { $0.role == .user }?.content ?? ""
+        let boundary = "tykaoz-\(UUID().uuidString)"
+
+        var request = URLRequest(url: baseURL.appending(path: "/images/edits"))
+        request.httpMethod = "POST"
+        request.setValue(
+            "multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.timeoutInterval = 120
+        request.httpBody = Self.multipartBody(
+            boundary: boundary, fields: ["model": model, "prompt": prompt], images: images)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAICompatibleError.network(message: "réponse non-HTTP")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let text = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw OpenAICompatibleError.http(
+                status: http.statusCode, body: (text?.isEmpty == false) ? text : nil)
+        }
+
+        let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let b64 = (json?["data"] as? [[String: Any]])?.first?["b64_json"] as? String,
+              let imageData = Data(base64Encoded: b64) else {
+            throw OpenAICompatibleError.decoding(message: "réponse édition sans b64_json")
+        }
+        continuation.yield(.imageOutput(data: imageData, mimeType: "image/png"))
+    }
+
+    /// Builds a multipart/form-data body with text fields and image files
+    /// (each as `image[]`, which gpt-image-1 accepts for one or many).
+    static func multipartBody(boundary: String, fields: [String: String], images: [URL]) -> Data {
+        var body = Data()
+        func append(_ string: String) { body.append(Data(string.utf8)) }
+        for (key, value) in fields {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
+            append("\(value)\r\n")
+        }
+        for url in images {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"image[]\"; filename=\"\(url.lastPathComponent)\"\r\n")
+            append("Content-Type: \(ImageContent.mimeType(for: url))\r\n\r\n")
+            body.append(data)
+            append("\r\n")
+        }
+        append("--\(boundary)--\r\n")
+        return body
+    }
+
+    // MARK: - Qwen image generation (DashScope native)
+
+    /// True for DashScope (Qwen) text-to-image models, which use the native
+    /// `multimodal-generation` endpoint rather than chat completions.
+    static func isQwenImageModel(_ model: String) -> Bool {
+        let m = model.lowercased()
+        return m.contains("qwen-image") || m.hasPrefix("wan")
+    }
+
+    /// Extracts the generated image URL from a DashScope multimodal
+    /// response: `output.choices[0].message.content[].image`.
+    static func parseQwenImageURL(_ data: Data) -> String? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let output = json["output"] as? [String: Any],
+              let choices = output["choices"] as? [[String: Any]],
+              let message = choices.first?["message"] as? [String: Any],
+              let content = message["content"] as? [[String: Any]] else {
+            return nil
+        }
+        return content.compactMap { $0["image"] as? String }.first
+    }
+
+    /// Generates an image via DashScope's native endpoint, fetches the
+    /// returned (temporary) URL, and emits it as one `.imageOutput`.
+    private func runQwenImageGeneration(
+        model: String,
+        messages: [ChatMessage],
+        continuation: AsyncThrowingStream<StreamEvent, Error>.Continuation
+    ) async throws {
+        let prompt = messages.last { $0.role == .user }?.content ?? ""
+
+        // Derive the native endpoint from the compatible-mode base URL
+        // (same host, different path).
+        guard let scheme = baseURL.scheme, let host = baseURL.host else {
+            throw OpenAICompatibleError.network(message: "URL de base invalide")
+        }
+        var components = URLComponents()
+        components.scheme = scheme
+        components.host = host
+        components.path = "/api/v1/services/aigc/multimodal-generation/generation"
+        guard let endpoint = components.url else {
+            throw OpenAICompatibleError.network(message: "URL DashScope invalide")
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(
+            "Bearer \(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))",
+            forHTTPHeaderField: "Authorization"
+        )
+        request.timeoutInterval = 120
+
+        // Attached images turn this into an edit: include them in the
+        // content before the text. Size only applies to from-scratch gen.
+        let images = messages.last { $0.role == .user }?.imageURLs ?? []
+        var content: [[String: Any]] = images.compactMap { url in
+            guard let (mime, b64) = ImageContent.encode(url) else { return nil }
+            return ["image": "data:\(mime);base64,\(b64)"]
+        }
+        content.append(["text": prompt])
+
+        var parameters: [String: Any] = ["prompt_extend": true, "watermark": false]
+        if images.isEmpty {
+            parameters["size"] = "1328*1328"
+            parameters["n"] = 1
+        }
+        let body: [String: Any] = [
+            "model": model,
+            "input": ["messages": [["role": "user", "content": content]]],
+            "parameters": parameters,
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch let urlError as URLError {
+            throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw OpenAICompatibleError.network(message: "réponse non-HTTP")
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let text = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw OpenAICompatibleError.http(
+                status: http.statusCode,
+                body: (text?.isEmpty == false) ? text : nil
+            )
+        }
+
+        guard let urlString = Self.parseQwenImageURL(data),
+              let imageURL = URL(string: urlString) else {
+            throw OpenAICompatibleError.decoding(message: "réponse image Qwen sans URL")
+        }
+
+        // Fetch the generated image (temporary signed URL).
+        let imageData: Data
+        do {
+            (imageData, _) = try await session.data(from: imageURL)
+        } catch let urlError as URLError {
+            throw OpenAICompatibleError.network(message: urlError.localizedDescription)
+        }
+        let mime = imageURL.pathExtension.lowercased() == "jpg"
+            || imageURL.pathExtension.lowercased() == "jpeg" ? "image/jpeg" : "image/png"
+        continuation.yield(.imageOutput(data: imageData, mimeType: mime))
+    }
+
     // MARK: - Request body
 
     /// Builds the request body as a dictionary so we can splice each tool's
@@ -354,10 +643,20 @@ struct OpenAICompatibleClient {
             let msg = messages[i]
             switch msg.role {
             case .user, .system:
-                out.append([
-                    "role": msg.role.rawValue,
-                    "content": msg.content
-                ])
+                if msg.role == .user, !msg.imageURLs.isEmpty {
+                    // Multimodal: content becomes an array of parts (text +
+                    // image_url data URLs) for vision-capable models.
+                    var parts: [[String: Any]] = ImageContent.openAIParts(for: msg.imageURLs)
+                    if !msg.content.isEmpty {
+                        parts.insert(["type": "text", "text": msg.content], at: 0)
+                    }
+                    out.append(["role": "user", "content": parts])
+                } else {
+                    out.append([
+                        "role": msg.role.rawValue,
+                        "content": msg.content
+                    ])
+                }
                 i += 1
 
             case .assistant:

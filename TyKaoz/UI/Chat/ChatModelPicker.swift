@@ -4,6 +4,7 @@ import SwiftUI
 /// in one gesture, listing only the models they've enabled per provider.
 struct ChatModelPicker: View {
     @Environment(AppSettings.self) private var settings
+    @Environment(ModelCatalogService.self) private var catalog
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -59,7 +60,7 @@ struct ChatModelPicker: View {
             return formatLabel(
                 provider,
                 model: settings.mlxChatModelID
-                    .flatMap { MLXModelCatalog.entry(forID: $0)?.displayName ?? $0 }
+                    .flatMap { catalog.entry(forID: $0)?.name ?? $0 }
             )
         case .mistral:
             return formatLabel(provider, model: settings.mistralModel)
@@ -102,7 +103,7 @@ struct ChatModelPicker: View {
             // Catalog is static and installation = "available".
             // Only show models actually on disk so the picker doesn't
             // dangle entries that would 404 on chat().
-            let installed = MLXModelCatalog.chats
+            let installed = catalog.chats
                 .filter { MLXModelStore.shared.isInstalled(modelID: $0.id) }
             if !installed.isEmpty {
                 Section(provider.displayName) {
@@ -111,9 +112,9 @@ struct ChatModelPicker: View {
                             activate(provider: .mlx, model: entry.id)
                         } label: {
                             if isActive(provider: .mlx, model: entry.id) {
-                                Label(entry.displayName, systemImage: "checkmark")
+                                Label(entry.name, systemImage: "checkmark")
                             } else {
-                                Text(entry.displayName)
+                                Text(entry.name)
                             }
                         }
                     }

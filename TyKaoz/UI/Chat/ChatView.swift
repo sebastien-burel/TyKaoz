@@ -1,5 +1,6 @@
 import SwiftUI
 import MarkdownUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Environment(ConversationStore.self) private var store
@@ -13,6 +14,11 @@ struct ChatView: View {
 
     @State private var session = ChatSession()
     @State private var draft: String = ""
+    /// Images staged for the next message (VLM models only). Held in
+    /// memory until send, then written to the conversation's attachment
+    /// store. Cleared when switching conversations.
+    @State private var pendingImages: [PendingImage] = []
+    @State private var isImageImporterPresented = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -126,26 +132,128 @@ struct ChatView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField(placeholder, text: $draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(Brand.Fonts.body(14))
-                .padding(10)
-                .background(Color.white)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Brand.Colors.slate.opacity(0.2), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(Brand.Colors.ink)
-                .lineLimit(1...6)
-                .disabled(!canType)
-                .onSubmit(send)
+        VStack(alignment: .leading, spacing: 8) {
+            if !pendingImages.isEmpty {
+                pendingImagesStrip
+            }
+            HStack(spacing: 8) {
+                if supportsImages {
+                    attachButton
+                }
+                TextField(placeholder, text: $draft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(Brand.Fonts.body(14))
+                    .padding(10)
+                    .background(Color.white)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Brand.Colors.slate.opacity(0.2), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .foregroundStyle(Brand.Colors.ink)
+                    .lineLimit(1...6)
+                    .disabled(!canType)
+                    .onSubmit(send)
 
-            actionButton
+                actionButton
+            }
         }
         .padding(12)
         .background(Brand.Colors.paper)
+        .fileImporter(
+            isPresented: $isImageImporterPresented,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result { importImages(from: urls) }
+        }
+        .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
+            guard supportsImages else { return false }
+            return handleImageDrop(providers)
+        }
+        // ⌘V : intercept image paste before the focused text field eats it
+        // (SwiftUI's onPasteCommand never fires while the field has focus).
+        // Only claims the event when the clipboard holds an image and a VLM
+        // is active, so plain text paste is untouched.
+        .background(ImagePasteCatcher(isEnabled: supportsImages, onPaste: pasteImageFromClipboard))
+        .onChange(of: conversation?.id) { _, _ in pendingImages = [] }
+    }
+
+    /// The active model can take images. Drives the attach button, drop
+    /// target and ⌘V paste so text-only models don't offer image input.
+    /// MLX is gated precisely via the catalog's VLM flag; cloud providers
+    /// whose modern models are multimodal are allowed at the provider
+    /// level (a non-vision model there errors at request time).
+    private var supportsImages: Bool {
+        guard let model = activeModelForCurrentProvider(), !model.isEmpty else { return false }
+        switch providerID {
+        case "mlx":
+            return ModelCatalogService.shared.entry(forID: model)?.isVision == true
+        case "anthropic", "openai", "google":
+            // Modern lineups are uniformly multimodal.
+            return true
+        case "mistral", "qwen", "zai":
+            // Text and vision models coexist — gate on the model id. Qwen
+            // image models also accept an input image (for editing); use the
+            // client's own predicate so gating matches routing exactly.
+            return Self.modelLooksMultimodal(model)
+                || OpenAICompatibleClient.isQwenImageModel(model)
+        default:
+            return false
+        }
+    }
+
+    /// Heuristic for providers that mix text and vision models. Vision ids
+    /// carry recognisable markers: `-vl` (Qwen), `pixtral` / `mistral-small`
+    /// / `mistral-medium` (Mistral), a digit+`v` suffix (z.ai GLM-4.5V…),
+    /// or an explicit `vision`. A miss just hides the button; a false
+    /// positive errors at request time.
+    private static func modelLooksMultimodal(_ id: String) -> Bool {
+        let s = id.lowercased()
+        if s.contains("vl") || s.contains("vision") || s.contains("pixtral")
+            || s.contains("mistral-small") || s.contains("mistral-medium") {
+            return true
+        }
+        return s.range(of: #"[0-9]v"#, options: .regularExpression) != nil
+    }
+
+    private var attachButton: some View {
+        Button {
+            isImageImporterPresented = true
+        } label: {
+            Image(systemName: "photo.on.rectangle")
+                .font(.system(size: 20))
+                .foregroundStyle(canType ? Brand.Colors.tide : Brand.Colors.slate.opacity(0.3))
+        }
+        .buttonStyle(.plain)
+        .disabled(!canType)
+        .help(maxImages == 1 ? "Joindre une image" : "Joindre des images")
+    }
+
+    private var pendingImagesStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(pendingImages) { pending in
+                    ZStack(alignment: .topTrailing) {
+                        Image(nsImage: pending.image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        Button {
+                            pendingImages.removeAll { $0.id == pending.id }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.white, Brand.Colors.ink.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(2)
+                    }
+                }
+            }
+            .padding(.horizontal, 2)
+        }
     }
 
     @ViewBuilder
@@ -231,13 +339,23 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        canType && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        canType && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty)
     }
 
     private func send() {
-        guard let provider, conversation != nil else { return }
+        guard let provider, let conv = conversation else { return }
         let text = draft
+        // Persist staged images to the conversation's attachment store; the
+        // resulting metadata rides on the user message, the file URLs reach
+        // the VLM via ChatSession → MLXChatActor.
+        var attachments: [Message.Attachment] = []
+        for pending in pendingImages {
+            if let saved = store.saveAttachment(pending.data, conversationID: conv.id, ext: pending.ext) {
+                attachments.append(saved)
+            }
+        }
         draft = ""
+        pendingImages = []
         session.send(
             text: text,
             in: Binding(
@@ -246,17 +364,149 @@ struct ChatView: View {
             ),
             using: provider,
             tools: tools,
-            memoryContext: settings.isToolEnabled("read_memory") ? memory.promptContext : nil
+            memoryContext: settings.isToolEnabled("read_memory") ? memory.promptContext : nil,
+            attachments: attachments,
+            store: store
         )
+    }
+
+    /// Images per message: MLX VLMs (Gemma) accept a single image per
+    /// prompt (mlx-swift-lm limitation); cloud vision models take several.
+    private var maxImages: Int { providerID == "mlx" ? 1 : 6 }
+
+    /// Stages one image, respecting `maxImages`. At a cap of 1 the latest
+    /// replaces the previous; above 1 it accumulates until full.
+    private func stage(_ pending: PendingImage) {
+        if maxImages == 1 {
+            pendingImages = [pending]
+        } else if pendingImages.count < maxImages {
+            pendingImages.append(pending)
+        }
+    }
+
+    private func importImages(from urls: [URL]) {
+        for url in urls {
+            if maxImages > 1, pendingImages.count >= maxImages { break }
+            let didAccess = url.startAccessingSecurityScopedResource()
+            defer { if didAccess { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url),
+                  let pending = Self.makePendingImage(from: data) else { continue }
+            stage(pending)
+        }
+    }
+
+    private func handleImageDrop(_ providers: [NSItemProvider]) -> Bool {
+        let loadable = providers.filter { $0.canLoadObject(ofClass: NSImage.self) }
+        guard !loadable.isEmpty else { return false }
+        for provider in loadable {
+            _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                guard let image = object as? NSImage,
+                      let tiff = image.tiffRepresentation,
+                      let pending = Self.makePendingImage(from: tiff) else { return }
+                Task { @MainActor in stage(pending) }
+            }
+        }
+        return true
+    }
+
+    /// Stages an image from the general pasteboard (⌘V). No-op if the
+    /// clipboard holds no image.
+    private func pasteImageFromClipboard() {
+        guard let image = NSImage(pasteboard: NSPasteboard.general),
+              let tiff = image.tiffRepresentation,
+              let pending = Self.makePendingImage(from: tiff) else { return }
+        stage(pending)
+    }
+
+    /// Downscales to a 1536 px longest side and re-encodes to JPEG so
+    /// attachments stay small. VLM processors resize internally anyway —
+    /// this just caps what we store and feed.
+    private static func makePendingImage(from data: Data, maxSide: CGFloat = 1536) -> PendingImage? {
+        guard let source = NSImage(data: data),
+              let tiff = source.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        let width = CGFloat(rep.pixelsWide), height = CGFloat(rep.pixelsHigh)
+        guard width > 0, height > 0 else { return nil }
+        let scale = min(1, maxSide / max(width, height))
+        let targetW = max(1, Int((width * scale).rounded()))
+        let targetH = max(1, Int((height * scale).rounded()))
+        guard let target = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: targetW, pixelsHigh: targetH,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return nil }
+        target.size = NSSize(width: targetW, height: targetH)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: target)
+        source.draw(in: NSRect(x: 0, y: 0, width: targetW, height: targetH),
+                    from: .zero, operation: .copy, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        guard let jpeg = target.representation(using: .jpeg, properties: [.compressionFactor: 0.9]),
+              let image = NSImage(data: jpeg) else { return nil }
+        return PendingImage(data: jpeg, ext: "jpg", image: image)
+    }
+}
+
+/// An image staged in the input bar before it's sent + persisted.
+private struct PendingImage: Identifiable {
+    let id = UUID()
+    let data: Data
+    let ext: String
+    let image: NSImage
+}
+
+/// Invisible AppKit view that catches ⌘V at the view-hierarchy level —
+/// before the focused text field's field editor consumes it. It only
+/// claims the event when `isEnabled` (a VLM is active) and the clipboard
+/// actually holds an image; otherwise it passes through so plain-text
+/// paste behaves normally.
+private struct ImagePasteCatcher: NSViewRepresentable {
+    let isEnabled: Bool
+    let onPaste: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView { CatcherView() }
+
+    func updateNSView(_ view: CatcherView, context: Context) {
+        view.isEnabled = isEnabled
+        view.onPaste = onPaste
+    }
+
+    final class CatcherView: NSView {
+        var isEnabled = false
+        var onPaste: (() -> Void)?
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            if isEnabled,
+               event.modifierFlags.contains(.command),
+               event.charactersIgnoringModifiers?.lowercased() == "v",
+               NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil) {
+                onPaste?()
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
     }
 }
 
 private struct MessageBubble: View {
     let message: Message
+    var imageURLs: [URL] = []
+
+    @State private var reasoningExpanded = false
 
     var body: some View {
         HStack {
             if message.role == .user { Spacer(minLength: 40) }
+            VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            if !imageURLs.isEmpty { attachmentThumbnails }
+            if message.role == .assistant,
+               let reasoning = message.reasoningContent,
+               !reasoning.isEmpty {
+                reasoningDisclosure(reasoning)
+            }
+            // Skip the "…" text bubble for an assistant that returned only
+            // an image (no text).
+            if !message.content.isEmpty || (message.role == .assistant && imageURLs.isEmpty) {
             Markdown(displayText)
                 .markdownTextStyle {
                     FontFamily(.custom("Inter Tight"))
@@ -312,8 +562,109 @@ private struct MessageBubble: View {
                     Button("Copier le message") { copyToPasteboard(message.content) }
                         .disabled(message.content.isEmpty)
                 }
+            }
+            }
             if message.role == .assistant { Spacer(minLength: 40) }
         }
+        // Auto-expand the reasoning panel while the model is thinking (no
+        // answer text yet), collapse it once the answer starts. The user
+        // can still toggle a finished message manually.
+        .onAppear {
+            reasoningExpanded = message.content.isEmpty && hasReasoning
+        }
+        .onChange(of: message.reasoningContent) { _, _ in
+            if message.content.isEmpty, hasReasoning { reasoningExpanded = true }
+        }
+        .onChange(of: message.content.isEmpty) { _, contentEmpty in
+            if !contentEmpty { reasoningExpanded = false }
+        }
+    }
+
+    private var hasReasoning: Bool {
+        !(message.reasoningContent ?? "").isEmpty
+    }
+
+    /// Collapsible panel for a "thinking" model's chain of thought
+    /// (Qwen 3 `<think>`, Gemma channel markers…). Captured but not part
+    /// of the answer; collapsed by default.
+    @ViewBuilder
+    private func reasoningDisclosure(_ reasoning: String) -> some View {
+        DisclosureGroup(isExpanded: $reasoningExpanded) {
+            Text(reasoning)
+                .font(Brand.Fonts.body(12))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "brain")
+                    .font(.system(size: 12))
+                Text("Réflexion")
+                    .font(Brand.Fonts.body(13))
+            }
+            .foregroundStyle(Brand.Colors.slate.opacity(0.75))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.white)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Brand.Colors.slate.opacity(0.15), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .frame(maxWidth: 520, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private var attachmentThumbnails: some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            ForEach(imageURLs, id: \.self) { url in
+                if let nsImage = NSImage(contentsOf: url) {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: 360, maxHeight: 360)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .contextMenu {
+                            Button("Enregistrer l'image…") { Self.saveImage(at: url) }
+                            Button("Copier l'image") { Self.copyImage(at: url) }
+                            Button("Afficher dans le Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([url])
+                            }
+                        }
+                        .help("Clic droit pour enregistrer ou copier")
+                }
+            }
+        }
+    }
+
+    /// Saves an attachment to a user-chosen location. Presented on the next
+    /// run-loop tick (the context menu is still tearing down when the action
+    /// fires, which can swallow a synchronous panel) and written via `Data`
+    /// so the powerbox-granted write actually lands.
+    private static func saveImage(at url: URL) {
+        let ext = url.pathExtension.isEmpty ? "jpg" : url.pathExtension
+        DispatchQueue.main.async {
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "TyKaoz-image.\(ext)"
+            panel.canCreateDirectories = true
+            if let type = UTType(filenameExtension: ext) {
+                panel.allowedContentTypes = [type]
+            }
+            panel.begin { response in
+                guard response == .OK, let dest = panel.url,
+                      let data = try? Data(contentsOf: url) else { return }
+                try? data.write(to: dest, options: .atomic)
+            }
+        }
+    }
+
+    private static func copyImage(at url: URL) {
+        guard let image = NSImage(contentsOf: url) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.writeObjects([image])
     }
 
     /// Subtle inset color for fenced code blocks; contrasted with the bubble
@@ -366,13 +717,21 @@ private struct MessageBubble: View {
 /// that's expanded while the turn is streaming and collapses automatically
 /// once the turn ends.
 private struct TurnView: View {
+    @Environment(ConversationStore.self) private var store
     let turn: Conversation.Turn
     let conversation: Conversation
     let isLive: Bool
 
+    /// Resolves a message's attachments (user uploads or model-generated
+    /// images) to on-disk URLs for display.
+    private func imageURLs(for message: Message) -> [URL] {
+        (message.attachments ?? [])
+            .map { store.attachmentURL(conversationID: conversation.id, $0) }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            MessageBubble(message: turn.userMessage)
+            MessageBubble(message: turn.userMessage, imageURLs: imageURLs(for: turn.userMessage))
                 .id(turn.userMessage.id)
 
             if !turn.intermediates.isEmpty {
@@ -384,7 +743,7 @@ private struct TurnView: View {
             }
 
             if let final = turn.finalAssistant {
-                MessageBubble(message: final)
+                MessageBubble(message: final, imageURLs: imageURLs(for: final))
                     .id(final.id)
             }
         }

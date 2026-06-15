@@ -14,10 +14,27 @@ struct Message: Identifiable, Hashable, Codable {
         case toolResult
     }
 
+    /// A file attached to a message (currently images for VLM models).
+    /// Only metadata is persisted in the conversation JSON; the bytes live
+    /// as sidecar files managed by `ConversationStore`. `filename` is
+    /// `<uuid>.<ext>` within the conversation's attachments folder.
+    struct Attachment: Identifiable, Hashable, Codable {
+        let id: UUID
+        let filename: String
+
+        init(id: UUID = UUID(), filename: String) {
+            self.id = id
+            self.filename = filename
+        }
+    }
+
     let id: UUID
     let role: Role
     var content: String
     let timestamp: Date
+
+    /// Image attachments on a `.user` message. nil/empty for text-only.
+    var attachments: [Attachment]?
 
     /// Provider-assigned id correlating a tool call with its result. nil for
     /// user / assistant / system text messages.
@@ -48,6 +65,7 @@ struct Message: Identifiable, Hashable, Codable {
         role: Role,
         content: String,
         timestamp: Date = .now,
+        attachments: [Attachment]? = nil,
         toolCallID: String? = nil,
         toolName: String? = nil,
         toolIsError: Bool? = nil,
@@ -58,6 +76,7 @@ struct Message: Identifiable, Hashable, Codable {
         self.role = role
         self.content = content
         self.timestamp = timestamp
+        self.attachments = attachments
         self.toolCallID = toolCallID
         self.toolName = toolName
         self.toolIsError = toolIsError

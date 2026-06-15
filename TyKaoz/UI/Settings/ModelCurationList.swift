@@ -64,6 +64,7 @@ struct ModelCurationSheet: View {
 
     @State private var search: String = ""
     @State private var showAll: Bool = false
+    @State private var customID: String = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -104,14 +105,47 @@ struct ModelCurationSheet: View {
                     .stroke(Brand.Colors.slate.opacity(0.15), lineWidth: 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            // Add a model the provider's /models endpoint doesn't list
+            // (e.g. image models like cogview-*, qwen-image-*). The id is
+            // enabled directly and shows in the list below.
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle")
+                    .foregroundStyle(.secondary)
+                TextField("Ajouter un modèle par id exact…", text: $customID)
+                    .textFieldStyle(.plain)
+                    .font(Brand.Fonts.body(13))
+                    .onSubmit(addCustomModel)
+                Button("Ajouter", action: addCustomModel)
+                    .disabled(customID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(8)
+            .background(Color.white)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Brand.Colors.slate.opacity(0.15), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .padding(16)
     }
 
+    private func addCustomModel() {
+        let id = customID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty else { return }
+        settings.setEnabled(true, modelID: id, for: provider)
+        customID = ""
+        search = ""
+    }
+
     private var filteredIDs: [String] {
-        allModelIDs.filter { id in
+        // Include enabled ids the catalog doesn't list (manually added),
+        // so they appear and stay toggleable.
+        let enabled = settings.enabledModels(for: provider)
+        let extras = enabled.filter { !allModelIDs.contains($0) }
+        return (allModelIDs + extras).filter { id in
             !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                && (showAll || ModelHeuristic.isLikelyChatModel(id: id, provider: provider))
+                && (showAll || ModelHeuristic.isLikelyChatModel(id: id, provider: provider) || enabled.contains(id))
                 && (search.isEmpty || id.localizedCaseInsensitiveContains(search))
         }
     }

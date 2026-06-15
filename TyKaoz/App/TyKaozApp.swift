@@ -14,6 +14,8 @@ struct TyKaozApp: App {
     /// free of the preferences-window margins.
     static let settingsWindowID = "settings"
 
+    @Environment(\.scenePhase) private var scenePhase
+
     @State private var settings = AppSettings()
     @State private var conversationStore = ConversationStore()
     @State private var fileSpaceStore = FileSpaceStore()
@@ -36,7 +38,13 @@ struct TyKaozApp: App {
                 .environment(pluginStore)
                 .environment(wikiManager)
                 .environment(mlxDownloads)
+                .environment(ModelCatalogService.shared)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
+                .task {
+                    // Pull the live model manifest; failure is silent,
+                    // the cache/bundle catalog keeps serving.
+                    await ModelCatalogService.shared.refresh()
+                }
                 .onAppear {
                     wikiManager.reconcile(settings: settings)
                     // Launch-time LRU pass. Pinning the currently-
@@ -63,6 +71,23 @@ struct TyKaozApp: App {
                 .onChange(of: settings.wikiEmbeddingProviderID) { _, _ in
                     wikiManager.reconcile(settings: settings)
                 }
+                // Flush debounced conversation saves when the app loses
+                // focus, backgrounds, or quits — otherwise a save still in
+                // its 300 ms window is lost if the process is killed (e.g.
+                // an Xcode re-run), dropping the last message / attachment.
+                .onChange(of: scenePhase) { _, phase in
+                    if phase != .active {
+                        Task { await conversationStore.flushPendingSaves() }
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(
+                    for: NSApplication.willResignActiveNotification)) { _ in
+                    Task { await conversationStore.flushPendingSaves() }
+                }
+                .onReceive(NotificationCenter.default.publisher(
+                    for: NSApplication.willTerminateNotification)) { _ in
+                    Task { await conversationStore.flushPendingSaves() }
+                }
         }
         .commands {
             AppCommands()
@@ -76,6 +101,7 @@ struct TyKaozApp: App {
                 .environment(pluginStore)
                 .environment(wikiManager)
                 .environment(mlxDownloads)
+                .environment(ModelCatalogService.shared)
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
         .defaultSize(width: 860, height: 600)

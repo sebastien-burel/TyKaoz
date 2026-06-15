@@ -312,11 +312,13 @@ struct AnthropicClient {
                 i += 1
 
             case .user:
+                // Image blocks first, then the text block (Anthropic
+                // vision format). Images come from local attachment URLs.
+                var content: [[String: Any]] = ImageContent.anthropicBlocks(for: msg.imageURLs)
+                content.append(["type": "text", "text": msg.content])
                 out.append([
                     "role": "user",
-                    "content": [
-                        ["type": "text", "text": msg.content] as [String: Any]
-                    ]
+                    "content": content
                 ])
                 i += 1
 

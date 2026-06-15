@@ -61,6 +61,20 @@ actor MLXEmbeddingActor {
         return await runForward(texts: texts, on: container)
     }
 
+    /// Drops the loaded container, reclaiming its GPU memory. The next
+    /// `embed()` reloads lazily. Mirrors `MLXChatActor.unload()`.
+    func unload() {
+        container = nil
+    }
+
+    /// Unloads every loaded embedder container — the manual "décharger"
+    /// command. Pair with `MLX.GPU.clearCache()` to return freed memory
+    /// to the system.
+    @MainActor
+    static func unloadAll() async {
+        for actor in instances.values { await actor.unload() }
+    }
+
     // MARK: - Internals
 
     private func loadIfNeeded() async throws -> EmbedderModelContainer {
@@ -70,10 +84,11 @@ actor MLXEmbeddingActor {
         // gives us our disk-space pre-flight + presence checks.
         _ = try await MLXModelStore.shared.download(modelID: modelID)
 
+        let revision = await ModelCatalogService.shared.entry(forID: modelID)?.revision ?? "main"
         let loaded = try await EmbedderModelFactory.shared.loadContainer(
             from: downloader,
             using: tokenizerLoader,
-            configuration: ModelConfiguration(id: modelID)
+            configuration: ModelConfiguration(id: modelID, revision: revision)
         ) { _ in
             // No progress reporting needed at load-time — the
             // download (above) already reported, and the actual

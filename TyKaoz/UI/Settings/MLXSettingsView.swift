@@ -1,4 +1,5 @@
 import SwiftUI
+import MLX
 
 /// Provider-side settings panel for MLX. Lists curated embedding
 /// models, shows installed status + size, and exposes the cache
@@ -6,14 +7,15 @@ import SwiftUI
 struct MLXSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(MLXDownloadCenter.self) private var downloads
+    @Environment(ModelCatalogService.self) private var catalog
 
     @State private var installed: [MLXModelStore.InstalledModel] = []
     @State private var totalSize: Int64 = 0
-    /// Ticks while any download is in flight to force the
-    /// `downloadedSizeLabel` to recompute. Without this the
-    /// bytes-on-disk counter would only update on the rare events
-    /// observed by `downloads.inflight.count` / `removalTick`.
-    @State private var diskPollTick: Int = 0
+    /// Real-conditions RAM probes keyed by model ID, plus in-flight /
+    /// error state, driven by the per-model "Mesurer la RAM" action.
+    @State private var measurements: [String: MLXChatActor.MemoryReport] = [:]
+    @State private var measuring: Set<String> = []
+    @State private var measureError: [String: String] = [:]
 
     var body: some View {
         @Bindable var settings = settings
@@ -42,16 +44,33 @@ struct MLXSettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
+
+                Button {
+                    Task {
+                        await MLXChatActor.unloadAll()
+                        await MLXEmbeddingActor.unloadAll()
+                        MLX.GPU.clearCache()
+                    }
+                } label: {
+                    Label("Décharger les modèles en mémoire", systemImage: "eject")
+                }
+                Text("""
+                Libère immédiatement la RAM GPU occupée par les modèles \
+                chargés. Sinon, un modèle inactif se décharge tout seul \
+                après 5 min.
+                """)
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(.secondary)
             }
 
             Section("Modèles d'embedding") {
-                ForEach(MLXModelCatalog.embeddings) { model in
+                ForEach(catalog.embeddings) { model in
                     modelRow(model)
                 }
             }
 
             Section("Modèles de chat") {
-                ForEach(MLXModelCatalog.chats) { model in
+                ForEach(catalog.chats) { model in
                     modelRow(model)
                 }
             }
@@ -72,18 +91,12 @@ struct MLXSettingsView: View {
             refresh()
         }
         .task(id: downloads.inflight.isEmpty) {
-            // 100 ms poll while a download is in flight. The bytes-
-            // on-disk counter mostly stays low during the URLSession
-            // streaming phase (the daemon cache is outside our
-            // sandbox) BUT spikes through several gigabytes during
-            // swift-huggingface's `appendFileContents` phase
-            // (tmp → `<blob>.incomplete`, 64 KB chunks at SSD
-            // speed). At 500 ms we caught one frame of that; at
-            // 100 ms we catch enough to feel like real progress.
+            // Keep the cache "Utilisé" gauge moving while a download is
+            // in flight (per-model progress now comes from the live
+            // fraction in `downloads.inflight`).
             while !downloads.inflight.isEmpty {
-                try? await Task.sleep(nanoseconds: 100_000_000)
+                try? await Task.sleep(nanoseconds: 250_000_000)
                 if Task.isCancelled { break }
-                diskPollTick &+= 1
                 totalSize = MLXModelStore.shared.totalCacheSize()
             }
         }
@@ -112,7 +125,7 @@ struct MLXSettingsView: View {
     }
 
     @ViewBuilder
-    private func modelRow(_ model: MLXModelCatalog.Entry) -> some View {
+    private func modelRow(_ model: CatalogModel) -> some View {
         let isInstalled = MLXModelStore.shared.isInstalled(modelID: model.id)
         let progress = downloads.inflight[model.id]
         let error = downloads.lastError[model.id]
@@ -121,7 +134,7 @@ struct MLXSettingsView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(model.displayName)
+                        Text(model.name)
                             .font(Brand.Fonts.body(13).weight(.medium))
                         if model.isVision {
                             Text("VLM")
@@ -132,7 +145,7 @@ struct MLXSettingsView: View {
                                 .foregroundStyle(Color.accentColor)
                         }
                     }
-                    Text(model.summary)
+                    Text(model.description)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)
                     HStack(spacing: 6) {
@@ -148,28 +161,28 @@ struct MLXSettingsView: View {
                             .font(Brand.Fonts.body(11))
                             .foregroundStyle(.secondary)
                     }
+                    ramWarning(for: model)
+                    memoryReadout(for: model)
                 }
                 Spacer()
                 actions(for: model, isInstalled: isInstalled, progress: progress)
             }
 
-            if progress != nil {
-                // URLSession download temp files live in the
-                // nsurlsessiond daemon's cache outside the sandbox,
-                // so we can't measure byte-level progress reliably.
-                // Show an indeterminate spinner + the actual
-                // bytes-on-disk count so the user has something
-                // honest to look at.
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Téléchargement en cours…")
-                        .font(Brand.Fonts.body(11))
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(downloadedSizeLabel(for: model))
-                        .font(Brand.Fonts.mono(11))
-                        .foregroundStyle(.secondary)
+            if let progress {
+                // Real byte-weighted progress forwarded from
+                // swift-huggingface (sampled ~10×/s during transfer).
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: min(max(progress, 0), 1))
+                        .progressViewStyle(.linear)
+                    HStack {
+                        Text("Téléchargement en cours…")
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(downloadProgressLabel(progress, of: model.sizeBytes))
+                            .font(Brand.Fonts.mono(11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -183,9 +196,81 @@ struct MLXSettingsView: View {
         .padding(.vertical, 4)
     }
 
+    /// Result of the real-conditions RAM probe: a spinner while it
+    /// runs, then measured resident/peak footprint plus a suggested
+    /// `min/recommended_ram_gb` (peak + OS headroom) to drop into the
+    /// manifest. Only chat models are probed (they load via
+    /// `MLXChatActor`); embedders are sized differently.
+    @ViewBuilder
+    private func memoryReadout(for model: CatalogModel) -> some View {
+        if measuring.contains(model.id) {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Mesure de la mémoire…")
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.secondary)
+            }
+        } else if let report = measurements[model.id] {
+            let resident = ByteCountFormatter.string(fromByteCount: Int64(report.residentBytes), countStyle: .memory)
+            let peak = ByteCountFormatter.string(fromByteCount: Int64(report.peakBytes), countStyle: .memory)
+            let peakGB = Double(report.peakBytes) / 1_073_741_824
+            let minSug = Int(peakGB.rounded(.up)) + 4
+            let recSug = Int(peakGB.rounded(.up)) + 8
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Mémoire mesurée — résident \(resident) · pic \(peak)")
+                    .font(Brand.Fonts.mono(11))
+                    .foregroundStyle(.secondary)
+                Text("Suggéré — min ~\(minSug) Go · conseillé ~\(recSug) Go")
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.secondary)
+            }
+            .textSelection(.enabled)
+        }
+        if let err = measureError[model.id] {
+            Label(err, systemImage: "exclamationmark.triangle")
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(.orange)
+                .lineLimit(3)
+        }
+    }
+
+    /// Loads the model and measures its real memory footprint. No-op if
+    /// a probe is already running for this model.
+    private func measure(_ model: CatalogModel) {
+        guard !measuring.contains(model.id) else { return }
+        measuring.insert(model.id)
+        measureError[model.id] = nil
+        Task {
+            do {
+                measurements[model.id] = try await MLXChatActor.shared(for: model.id).measureMemory()
+            } catch {
+                measureError[model.id] = error.localizedDescription
+            }
+            measuring.remove(model.id)
+        }
+    }
+
+    /// Orange notice when the model's declared minimum RAM exceeds this
+    /// machine's physical memory — it likely won't run. We warn rather
+    /// than hide: the floor is approximate and the user may know better.
+    @ViewBuilder
+    private func ramWarning(for model: CatalogModel) -> some View {
+        if let need = model.minRamGB, need > Self.machineRAMGB {
+            Label(
+                "Nécessite ~\(need) Go de RAM (cette machine : \(Self.machineRAMGB) Go).",
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(Brand.Fonts.body(11))
+            .foregroundStyle(.orange)
+        }
+    }
+
+    /// Physical memory in whole gigabytes (1 Go = 1024³).
+    private static let machineRAMGB = Int(ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024))
+
     @ViewBuilder
     private func actions(
-        for model: MLXModelCatalog.Entry,
+        for model: CatalogModel,
         isInstalled: Bool,
         progress: Double?
     ) -> some View {
@@ -195,6 +280,9 @@ struct MLXSettingsView: View {
             }
         } else if isInstalled {
             Menu {
+                if model.category == .chat {
+                    Button("Mesurer la RAM") { measure(model) }
+                }
                 Button("Re-télécharger") {
                     downloads.remove(model.id)
                     Task { _ = try? await downloads.download(model.id) }
@@ -244,9 +332,7 @@ struct MLXSettingsView: View {
     /// here. Letting them clean up via this panel keeps the cache
     /// honest.
     private var customInstalledModels: [MLXModelStore.InstalledModel] {
-        let curated = Set(
-            (MLXModelCatalog.embeddings + MLXModelCatalog.chats).map(\.id)
-        )
+        let curated = Set(catalog.models.map(\.id))
         return installed.filter { !curated.contains($0.modelID) }
     }
 
@@ -255,19 +341,12 @@ struct MLXSettingsView: View {
         totalSize = MLXModelStore.shared.totalCacheSize()
     }
 
-    /// "Téléchargé 1,2 Go / 1,6 Go" — honest live counter that
-    /// updates as the safetensors gets moved into the HF cache.
-    /// Before the final atomic-rename the number stays near 0 (the
-    /// bytes are in URLSession's tmp outside the sandbox), then
-    /// jumps to ~100 %. Better than a fake percent bar.
-    private func downloadedSizeLabel(for model: MLXModelCatalog.Entry) -> String {
-        // Reading `diskPollTick` here is what re-subscribes the
-        // View to its updates, so the counter refreshes every
-        // 500 ms during a download.
-        _ = diskPollTick
-        let actual = MLXModelStore.shared.sizeOnDisk(modelID: model.id)
-        let actualString = ByteCountFormatter.string(fromByteCount: actual, countStyle: .file)
-        let expectedString = ByteCountFormatter.string(fromByteCount: model.sizeBytes, countStyle: .file)
-        return "\(actualString) / \(expectedString)"
+    /// "1,2 Go / 1,6 Go · 75 %" derived from the live download fraction
+    /// and the catalog's expected size.
+    private func downloadProgressLabel(_ fraction: Double, of expectedBytes: Int64) -> String {
+        let done = Int64(Double(expectedBytes) * min(max(fraction, 0), 1))
+        let doneString = ByteCountFormatter.string(fromByteCount: done, countStyle: .file)
+        let expectedString = ByteCountFormatter.string(fromByteCount: expectedBytes, countStyle: .file)
+        return "\(doneString) / \(expectedString) · \(Int((fraction * 100).rounded())) %"
     }
 }

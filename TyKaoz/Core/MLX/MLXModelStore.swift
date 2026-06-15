@@ -29,6 +29,13 @@ final class MLXModelStore {
                 let have = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)
                 return "Pas assez d'espace disque (besoin : \(need), dispo : \(have))."
             case .downloadFailed(let modelID, let err):
+                if MLXModelStore.isTransientNetworkError(err) {
+                    return """
+                    Échec du téléchargement de « \(modelID) » : \
+                    connexion réseau interrompue. Réessaie — le \
+                    téléchargement reprend où il s'est arrêté.
+                    """
+                }
                 return """
                 Échec du téléchargement de « \(modelID) » : \
                 \(err.localizedDescription). Vérifie que le slug est \
@@ -39,14 +46,43 @@ final class MLXModelStore {
         }
     }
 
-    /// Rough sizes (bytes) used by the pre-flight check before
-    /// kicking off a download. Numbers are approximate — HF reshards
-    /// safetensors occasionally and the actual on-disk size drifts.
-    private static let knownSizes: [String: Int64] = [
-        "mlx-community/bge-m3-mlx-4bit": 337 * 1024 * 1024,
-        "mlx-community/bge-small-en-v1.5-4bit": 35 * 1024 * 1024,
-        "mlx-community/nomic-embed-text-v1.5-4bit": 90 * 1024 * 1024,
-    ]
+    /// True for URLSession errors a retry/resume can plausibly recover
+    /// from (dropped connection, timeout, transient DNS) — as opposed
+    /// to a 404 / invalid slug, which won't fix itself on retry.
+    /// `nonisolated` so `Failure.errorDescription` (nonisolated) and the
+    /// download retry loop can both call it.
+    nonisolated static func isTransientNetworkError(_ error: Error) -> Bool {
+        let ns = error as NSError
+        guard ns.domain == NSURLErrorDomain else { return false }
+        switch ns.code {
+        case NSURLErrorNetworkConnectionLost,
+             NSURLErrorTimedOut,
+             NSURLErrorCannotConnectToHost,
+             NSURLErrorCannotFindHost,
+             NSURLErrorDNSLookupFailed,
+             NSURLErrorNotConnectedToInternet,
+             NSURLErrorResourceUnavailable,
+             NSURLErrorSecureConnectionFailed,
+             NSURLErrorRequestBodyStreamExhausted:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Expected on-disk size (bytes) from the catalog, used by the
+    /// pre-flight check and the install heuristic. Approximate — HF
+    /// reshards safetensors occasionally and the real size drifts.
+    /// `0` when the slug isn't in the catalog (custom model).
+    private func expectedSize(modelID: String) -> Int64 {
+        ModelCatalogService.shared.entry(forID: modelID)?.sizeBytes ?? 0
+    }
+
+    /// Commit SHA the weights are pinned to, from the catalog. Falls
+    /// back to `main` for slugs the catalog doesn't know.
+    private func revision(modelID: String) -> String {
+        ModelCatalogService.shared.entry(forID: modelID)?.revision ?? "main"
+    }
 
     /// Macro-produced `Downloader` wrapping `HubClient`. Stored once
     /// so the type — opaque from the macro expansion — doesn't leak
@@ -82,10 +118,16 @@ final class MLXModelStore {
         return url
     }
 
-    /// Tries to resolve the latest snapshot directory (the one
-    /// containing the user-facing symlinks). Returns `nil` when
-    /// nothing is on disk. Used by the embed actor + LRU touch.
+    /// Resolves the snapshot directory (the one holding the user-facing
+    /// symlinks). Prefers the catalog-pinned revision when its snapshot
+    /// is on disk, so an older cached revision isn't served after the
+    /// manifest bumps `revision`. Falls back to any snapshot for custom
+    /// (`main`) slugs or revision drift. `nil` when nothing is on disk.
     func localDirectory(modelID: String) -> URL? {
+        let pinned = revision(modelID: modelID)
+        if pinned != "main", let dir = snapshotDirectory(modelID: modelID, revision: pinned) {
+            return dir
+        }
         guard let repo = repoDirectory(modelID: modelID) else { return nil }
         let snapshots = repo.appendingPathComponent("snapshots", isDirectory: true)
         guard let revisions = try? FileManager.default.contentsOfDirectory(
@@ -98,13 +140,24 @@ final class MLXModelStore {
         return firstRevision
     }
 
+    /// The on-disk snapshot directory for a specific revision, or `nil`
+    /// if that exact revision isn't cached.
+    private func snapshotDirectory(modelID: String, revision: String) -> URL? {
+        guard let repo = repoDirectory(modelID: modelID) else { return nil }
+        let dir = repo.appendingPathComponent("snapshots/\(revision)", isDirectory: true)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue
+        else { return nil }
+        return dir
+    }
+
     /// `true` when the model is on disk and its repo size is at
     /// least 90% of the expected size — catches half-downloaded
     /// snapshots while tolerating minor revision drift.
     func isInstalled(modelID: String) -> Bool {
         let actual = sizeOnDisk(modelID: modelID)
         if actual == 0 { return false }
-        let expected = Self.knownSizes[modelID] ?? 0
+        let expected = expectedSize(modelID: modelID)
         if expected == 0 { return true }
         return actual >= Int64(Double(expected) * 0.9)
     }
@@ -129,7 +182,16 @@ final class MLXModelStore {
         modelID: String,
         progressHandler: @MainActor @Sendable @escaping (Double) -> Void = { _ in }
     ) async throws -> URL {
-        if isInstalled(modelID: modelID),
+        // Serve the cache only when the *pinned* revision is on disk.
+        // A custom (`main`) slug has no pinned SHA, so any cached
+        // snapshot counts; a catalog model whose manifest `revision`
+        // bumped won't match its stale snapshot, so we re-download the
+        // new one instead of serving the old (e.g. a model re-quantized
+        // to add a chat template).
+        let pinned = revision(modelID: modelID)
+        let hasPinnedRevision = pinned == "main"
+            || snapshotDirectory(modelID: modelID, revision: pinned) != nil
+        if hasPinnedRevision, isInstalled(modelID: modelID),
            let dir = localDirectory(modelID: modelID) {
             progressHandler(1.0)
             return dir
@@ -137,33 +199,46 @@ final class MLXModelStore {
 
         try preflightDiskSpace(for: modelID)
 
-        // The upstream `Progress` coming back from `resolve(...)`
-        // technically updates per-byte but in practice it stays
-        // stuck near 0 % until late in the download (the parent
-        // aggregator depends on child `totalUnitCount` values that
-        // arrive only after each file's HEAD response, and the
-        // safetensors weighs ~95 % of the total). So we ignore
-        // that source and poll the repo dir's size on disk in
-        // parallel — gives a smooth, monotone bar.
-        let expected = Self.knownSizes[modelID]
-            ?? MLXModelCatalog.entry(forID: modelID)?.sizeBytes
-            ?? 0
-        do {
-            try await withPollingProgress(
-                modelID: modelID,
-                expected: expected,
-                handler: progressHandler
-            ) {
+        // HuggingFace large-file downloads drop connections fairly often
+        // ("The network connection was lost"). swift-huggingface caches
+        // each completed file and resumes partial blobs, so a bounded
+        // retry picks up roughly where it left off instead of restarting
+        // from zero. Cancellation and genuine 404s are not retried.
+        //
+        // swift-huggingface samples the snapshot `Progress` every ~100 ms
+        // during the transfer, byte-weighted across files, so forwarding
+        // `fractionCompleted` gives a smooth bar instead of a 0→100 % jump.
+        progressHandler(0)
+        let maxAttempts = 5
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
                 _ = try await resolve(
-                    configuration: ModelConfiguration(id: modelID),
+                    configuration: ModelConfiguration(
+                        id: modelID,
+                        revision: revision(modelID: modelID)
+                    ),
                     from: downloader,
                     useLatest: false,
-                    progressHandler: { _ in }
+                    progressHandler: { progress in
+                        let fraction = progress.fractionCompleted
+                        Task { @MainActor in progressHandler(fraction) }
+                    }
                 )
+                break
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                if Self.isTransientNetworkError(error), attempt < maxAttempts, !Task.isCancelled {
+                    // Linear backoff (2s, 4s, 6s, 8s), capped, then resume.
+                    try? await Task.sleep(for: .seconds(min(Double(attempt) * 2, 8)))
+                    continue
+                }
+                throw Failure.downloadFailed(modelID: modelID, underlying: error)
             }
-        } catch {
-            throw Failure.downloadFailed(modelID: modelID, underlying: error)
         }
+        progressHandler(1.0)
 
         guard let dir = localDirectory(modelID: modelID) else {
             throw Failure.downloadFailed(
@@ -176,33 +251,6 @@ final class MLXModelStore {
             )
         }
         return dir
-    }
-
-    /// Runs `body` (typically the `resolve(...)` call) and signals
-    /// the download lifecycle to `handler`:
-    ///
-    /// - `0.0` once when the download starts. The UI uses this as
-    ///   a "something is in flight" marker; it renders an
-    ///   indeterminate spinner rather than a fake percent bar.
-    /// - `1.0` once after `body()` returns (success path).
-    ///
-    /// We don't pretend to deliver byte-level progress: URLSession's
-    /// download tmp files live in the nsurlsessiond daemon cache
-    /// outside our sandbox, and swift-huggingface's parent
-    /// `Progress` aggregator only registers movement late in the
-    /// transfer. Both options were tried and discarded. The
-    /// `MLXSettingsView` instead reads `sizeOnDisk(modelID:)`
-    /// directly to render an honest "X / Y" counter that updates
-    /// as files land in the HF cache.
-    private func withPollingProgress(
-        modelID: String,
-        expected: Int64,
-        handler: @MainActor @Sendable @escaping (Double) -> Void,
-        body: () async throws -> Void
-    ) async throws {
-        await MainActor.run { handler(0) }
-        try await body()
-        await MainActor.run { handler(1.0) }
     }
 
     // MARK: - Cache management
@@ -326,7 +374,8 @@ final class MLXModelStore {
     // MARK: - Helpers
 
     private func preflightDiskSpace(for modelID: String) throws {
-        let needed = (Self.knownSizes[modelID] ?? 500 * 1024 * 1024) * 2
+        let size = expectedSize(modelID: modelID)
+        let needed = (size > 0 ? size : 500 * 1024 * 1024) * 2
         let available = freeDiskBytes()
         if available < needed {
             throw Failure.insufficientDiskSpace(needed: needed, available: available)
