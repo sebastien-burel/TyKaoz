@@ -51,12 +51,28 @@ Le détail des paliers est dans [`PLAN_TYKAOZ.md`](PLAN_TYKAOZ.md) et
 - Xcode 26.
 - Pour le chat local : un serveur Ollama joignable, ou des poids MLX
   téléchargés depuis l'app.
+- Un checkout local du **Moddable SDK** (récent) pour la dépendance locale
+  `../XSBridgeKit` : elle ne vendore pas les sources du moteur XS, elle les lie
+  depuis `$MODDABLE` (voir l'étape de setup ci-dessous).
 
 ## Build
 
 ```sh
 git clone git@github.com:sebastien-burel/TyKaoz.git
 cd TyKaoz
+```
+
+Setup unique de la dépendance locale `../XSBridgeKit` (lie les sources XS depuis
+ton checkout Moddable — sans ça, le moteur XS ne compile pas) :
+
+```sh
+export MODDABLE=/chemin/vers/moddable   # checkout Moddable récent
+../XSBridgeKit/scripts/link-moddable.sh
+```
+
+Puis ouvrir et compiler :
+
+```sh
 open TyKaoz.xcodeproj
 ```
 
@@ -67,9 +83,10 @@ xcodebuild build -project TyKaoz.xcodeproj -scheme TyKaoz -destination 'platform
 xcodebuild test  -project TyKaoz.xcodeproj -scheme TyKaoz -destination 'platform=macOS'
 ```
 
-Les dépendances sont gérées par Swift Package Manager et résolues
+Les dépendances **distantes** sont gérées par Swift Package Manager et résolues
 automatiquement à l'ouverture (GRDB, MLX Swift, swift-transformers, EventSource,
-swift-markdown-ui, entre autres). Aucune installation manuelle.
+swift-markdown-ui, entre autres). Seule la dépendance locale `../XSBridgeKit`
+demande l'étape `link-moddable.sh` ci-dessus.
 
 ## Architecture
 

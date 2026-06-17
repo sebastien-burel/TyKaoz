@@ -1,8 +1,11 @@
 # PLAN_TYKAOZ.md
 
 > Plan de développement — app macOS native de chat LLM, privacy-first.
-> État au 2026-06-01 : phases 0-5 livrées (chat multi-provider, persistance,
-> outils externes, plugins). Prochaine cible : Phase 6 — RAG documentaire.
+> État au 2026-06-14 : phases 0-6 livrées — chat multi-provider, persistance,
+> outils externes, plugins, **backend MLX local**, **RAG/Wiki on-device**
+> (cf. PLAN_TYKAOZ_WIKI.md), et **vision + génération/édition d'images**
+> multi-provider. Reste, côté produit : **test marché du MVP RAG** ; côté
+> code : agents, recherche plein-texte, packaging/distribution.
 > Ce plan avance **par paliers**. Chaque phase a des critères de succès
 > vérifiables (cf. CLAUDE.md, guideline 4). On ne passe à la phase suivante
 > qu'une fois les critères de la phase courante remplis.
@@ -178,23 +181,65 @@ encadrée, etc.) — non bloquants pour Phase 6.
 
 ---
 
-## Phase 6 — RAG documentaire (première milestone vendable)
+## Livré hors séquence — Backend MLX local
+
+Le 11e backend (rangé à l'origine en « phases ultérieures ») est livré : modèles
+**MLX exécutés sur le Mac**, sans réseau.
+
+- Catalogue piloté par un **manifeste HuggingFace** (`TyKaoz/models-manifest`,
+  cf. `models-manifest/` + `build_manifest.py`) : réseau > cache disque >
+  fallback embarqué ; poids épinglés par `revision`.
+- Téléchargements **revision-aware** : reprise/retry sur coupure réseau,
+  progression réelle (octets), garde-fou « chat template » (pas de crash sur
+  repo mal formé), cache LRU avec plafond configurable.
+- Chat MLX (`mlx-swift-lm`) : LLM + **VLM**, parsing des marqueurs propres aux
+  modèles (Gemma 4 tool-calls natifs/Hermes, canal de raisonnement),
+  mesure de la RAM réelle in-app (réinjectée dans le manifeste).
+- Embeddings MLX (bge-m3) — alimentent le Wiki/RAG.
+
+---
+
+## Livré hors séquence — Vision & génération d'images
+
+Entrée et sortie d'images dans le chat, multi-provider (hors plan initial).
+
+- **Entrée image** : joindre / glisser-déposer / coller (⌘V), persistées comme
+  pièces jointes ; envoyées aux VLM MLX **et** cloud (Anthropic, OpenAI, Google,
+  Mistral, Qwen, z.ai) — encodage par format (data-URL OpenAI, blocs Anthropic,
+  inlineData Gemini) ; cap par modèle (1 pour Gemma).
+- **Génération d'images** : Gemini (inline), OpenAI (Images API), Qwen
+  (DashScope), z.ai (CogView) ; image affichée + enregistrable + copiable.
+- **Édition d'images** : Gemini, OpenAI (`/images/edits`), Qwen (image dans le
+  content) ; z.ai non exposé par l'API.
+- **Raisonnement** : volet « Réflexion » repliable, auto-déplié pendant la pensée.
+
+**Reste dans cette veine :** vision pour Ollama / localOpenAI (modèles VLM locaux).
+
+---
+
+## Phase 6 — RAG documentaire (première milestone vendable) — **livré (code) ; test marché à faire**
 
 **But :** la vraie hypothèse produit. Glisser des documents, indexer en local,
 répondre en citant les sources. C'est ici qu'on teste si quelqu'un paierait.
 
-- [ ] Ingestion de documents (PDF/Markdown d'abord ; Word/Excel ensuite).
-- [ ] Embeddings locaux (piste : bge-m3 via Ollama — déjà dans ton stack).
-- [ ] Index vectoriel local + récupération.
-- [ ] Réponses du chat enrichies par le contexte récupéré, **avec citation
-      explicite des sources**.
-- [ ] Soin particulier sur le français.
+Implémenté sous forme de **Wiki on-device** (détail + schéma : PLAN_TYKAOZ_WIKI.md) :
+markdown canonique sur disque, index dérivé SQLite/GRDB (sqlite-vec + FTS5 +
+graphe wikilinks), finder hybride vec/BM25/graphe, file-watch incrémental,
+outils `search_wiki` / `read_page` / `write_wiki_page`, lint, vue graphe + lecteur.
+
+- [x] Ingestion de documents (sources `raw/`, markdown canonique `wiki/`).
+- [x] Embeddings locaux (bge-m3 via **MLX**, on-device).
+- [x] Index vectoriel local + récupération (sqlite-vec + FTS5 + expansion graphe).
+- [x] Réponses du chat enrichies par le contexte récupéré, **avec citation
+      des sources** (heading path).
+- [x] Soin particulier sur le français.
 
 **Critères de succès (produit, pas seulement technique) :**
-- Déposer 5-10 docs, poser une question → réponse correcte *avec sources*.
-- **Test marché :** montrer ce MVP RAG à ~5 pros cibles (cabinets, indépendants
-  manipulant des docs confidentiels) et observer s'ils dégainent la carte bleue.
-  C'est ce signal — pas le code — qui valide ou invalide le cap stratégique.
+- [x] Déposer des docs, poser une question → réponse *avec sources* (technique OK).
+- [ ] **Test marché :** montrer ce MVP RAG à ~5 pros cibles (cabinets, indépendants
+      manipulant des docs confidentiels) et observer s'ils dégainent la carte bleue.
+      C'est ce signal — pas le code — qui valide ou invalide le cap stratégique.
+      **← seul reste de la Phase 6.**
 
 ---
 
@@ -203,11 +248,11 @@ répondre en citant les sources. C'est ici qu'on teste si quelqu'un paierait.
 - **Agents** (boucles multi-étapes outillées, planification, retries).
 - **Graph sur les conversations** (relations entre échanges/sujets,
   navigation par sujet plutôt que chronologique).
-- **Recherche plein-texte** dans l'historique (reporté de la Phase 4).
+- **Recherche plein-texte** dans l'historique (reporté de la Phase 4 — *toujours
+  à faire*).
 - **iOS / iPadOS 26** : portage SwiftUI quand un besoin produit le justifie
   (cf. CLAUDE.md — code gardé portable mais targets non créés).
-- **MLX local** : 11e backend possible, avec téléchargement des poids.
-  Stresse l'abstraction provider différemment (pas de réseau, pas de `list_models`).
+- ~~**MLX local**~~ — **livré** (cf. « Livré hors séquence — Backend MLX local »).
 - **Packaging & distribution** : signature, notarisation, .dmg, compte
   développeur Apple, et seulement *si* le marché valide — RGPD/CNIL, CGU,
   modèle de prix. (Rappel : tout ce « reste » non-code est le vrai goulot pour

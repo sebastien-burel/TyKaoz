@@ -62,7 +62,7 @@ struct ChatMessage: Hashable, Sendable {
     let reasoningContent: String?
     let thoughtSignature: String?
 
-    init(
+    nonisolated init(
         role: Role,
         content: String,
         imageURLs: [URL] = [],

@@ -9,6 +9,9 @@ struct TyKaozApp: App {
     /// Wiki browser window — opened via Cmd-Shift-K or the View menu.
     static let wikiWindowID = "wiki"
 
+    /// Agents window — opened via Cmd-Shift-A or the Window menu.
+    static let agentsWindowID = "agents"
+
     /// Settings window — opened via Cmd-, (see AppCommands). A regular
     /// `Window` rather than the `Settings` scene so it stays resizable and
     /// free of the preferences-window margins.
@@ -21,6 +24,7 @@ struct TyKaozApp: App {
     @State private var fileSpaceStore = FileSpaceStore()
     @State private var memoryStore = MemoryStore()
     @State private var pluginStore = PluginStore()
+    @State private var agentStore = AgentStore()
     @State private var wikiManager = WikiManager()
     @State private var mlxDownloads = MLXDownloadCenter()
 
@@ -36,6 +40,7 @@ struct TyKaozApp: App {
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
                 .environment(pluginStore)
+                .environment(agentStore)
                 .environment(wikiManager)
                 .environment(mlxDownloads)
                 .environment(ModelCatalogService.shared)
@@ -114,5 +119,17 @@ struct TyKaozApp: App {
                 .environment(\.locale, Locale(identifier: "fr_FR"))
         }
         .defaultSize(width: 900, height: 600)
+
+        WindowGroup(id: Self.agentsWindowID) {
+            AgentsView()
+                .environment(settings)
+                .environment(agentStore)
+                .environment(fileSpaceStore)
+                .environment(memoryStore)
+                .environment(pluginStore)
+                .environment(wikiManager)
+                .environment(\.locale, Locale(identifier: "fr_FR"))
+        }
+        .defaultSize(width: 860, height: 640)
     }
 }
