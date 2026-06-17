@@ -190,6 +190,10 @@ final class AppSettings {
     }
 
     func setCatalog(_ ids: [String], for provider: ProviderID) {
+        // Some providers' /models endpoints list ids more than once (Mistral
+        // notably); store each at most once, preserving order.
+        var seen = Set<String>()
+        let ids = ids.filter { seen.insert($0).inserted }
         switch provider {
         case .anthropic:    anthropicCatalog = ids
         case .apple:        break

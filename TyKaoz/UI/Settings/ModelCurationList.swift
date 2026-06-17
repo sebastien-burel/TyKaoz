@@ -143,11 +143,16 @@ struct ModelCurationSheet: View {
         // so they appear and stay toggleable.
         let enabled = settings.enabledModels(for: provider)
         let extras = enabled.filter { !allModelIDs.contains($0) }
-        return (allModelIDs + extras).filter { id in
+        let matches = (allModelIDs + extras).filter { id in
             !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && (showAll || ModelHeuristic.isLikelyChatModel(id: id, provider: provider) || enabled.contains(id))
                 && (search.isEmpty || id.localizedCaseInsensitiveContains(search))
         }
+        // The catalog can hold duplicates (e.g. the Mistral /models endpoint
+        // lists some ids twice); collapse them so each model shows once and
+        // the List's `id: \.self` identity stays unique.
+        var seen = Set<String>()
+        return matches.filter { seen.insert($0).inserted }
     }
 
     private var list: some View {

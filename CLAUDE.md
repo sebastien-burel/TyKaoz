@@ -93,6 +93,13 @@ and extensible toward RAG, without over-engineering.
   No Combine unless there's a concrete reason.
 - **No external dependencies** without explicit approval. Prefer the stdlib /
   system frameworks. Each added package must be justified.
+- **XSBridgeKit (local SPM dependency `../XSBridgeKit`):** powers the JS agent
+  runtime. It does **not** vendor the XS engine sources — they are symlinked from
+  a local Moddable checkout. Before building/testing TyKaoz, run once (with a
+  recent Moddable checkout):
+  `export MODDABLE=/path/to/moddable && ../XSBridgeKit/scripts/link-moddable.sh`.
+  Without it the XS engine won't compile. Consume only the Swift API
+  (`XSEngine`, `HostBridge`, `HostResponder`) — never touch `xsSlot`/XS C macros.
 - **State:** keep view models thin; business logic in plain testable types.
 - **Tests:** Swift Testing (`import Testing`, `@Test`, `#expect`) — c'est
   ce que le template Xcode 26 ship et c'est ce qu'on utilise dans tout le

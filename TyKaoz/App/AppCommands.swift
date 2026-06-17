@@ -48,6 +48,11 @@ struct AppCommands: Commands {
                 openWindow(id: TyKaozApp.wikiWindowID)
             }
             .keyboardShortcut("k", modifiers: [.command, .shift])
+
+            Button("Agents") {
+                openWindow(id: TyKaozApp.agentsWindowID)
+            }
+            .keyboardShortcut("a", modifiers: [.command, .shift])
         }
     }
 }

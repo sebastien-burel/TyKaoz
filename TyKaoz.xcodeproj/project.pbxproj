@@ -20,6 +20,8 @@
 		32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92F2FD29174007412B7 /* HuggingFace */; };
 		32B9B9332FD2919E007412B7 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9322FD2919E007412B7 /* Tokenizers */; };
 		32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9BABC2FD2B403007412B7 /* MLXVLM */; };
+		32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984152FE17D62006447E9 /* XSBridgeKit */; };
+		32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984172FE17DA9006447E9 /* XSBridgeKit */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -81,6 +83,7 @@
 				32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */,
 				32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */,
 				7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */,
+				32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */,
 				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
 				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
 			);
@@ -90,6 +93,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,6 +169,7 @@
 				32B9B92F2FD29174007412B7 /* HuggingFace */,
 				32B9B9322FD2919E007412B7 /* Tokenizers */,
 				32B9BABC2FD2B403007412B7 /* MLXVLM */,
+				32E984152FE17D62006447E9 /* XSBridgeKit */,
 			);
 			productName = TyKaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TyKaoz.app */;
@@ -188,6 +193,7 @@
 			);
 			name = TyKaozTests;
 			packageProductDependencies = (
+				32E984172FE17DA9006447E9 /* XSBridgeKit */,
 			);
 			productName = TyKaozTests;
 			productReference = 32DEB2132FC2F85600BA1D98 /* TyKaozTests.xctest */;
@@ -255,6 +261,7 @@
 				32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */,
 				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
+				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -467,6 +474,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -519,6 +527,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ATSApplicationFontsPath = Fonts;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -713,6 +722,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../XSBridgeKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -829,6 +845,15 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXVLM;
+		};
+		32E984152FE17D62006447E9 /* XSBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = XSBridgeKit;
+		};
+		32E984172FE17DA9006447E9 /* XSBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */;
+			productName = XSBridgeKit;
 		};
 		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
