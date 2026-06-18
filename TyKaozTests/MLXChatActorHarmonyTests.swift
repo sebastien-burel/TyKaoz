@@ -79,6 +79,51 @@ struct MLXChatActorHarmonyTests {
         #expect(dict["q"] as? String == "sucre")
     }
 
+    /// The gpt-oss chat template raises a Jinja exception unless an
+    /// assistant tool call carries a structured `tool_calls` field and
+    /// the tool result follows as a `tool` role message. This is the
+    /// shaping that drives that — the fix for the `TemplateException`.
+    @Test
+    func shapesToolCallHistoryForTemplate() throws {
+        let history: [ChatMessage] = [
+            ChatMessage(role: .user, content: "Mémorise mon nom."),
+            ChatMessage(
+                role: .toolCall,
+                content: #"{"title":"User","content":"Sébastien","count":3,"flag":true}"#,
+                toolName: "save_memory"
+            ),
+            ChatMessage(role: .toolResult, content: "Mémorisé."),
+            ChatMessage(role: .assistant, content: "C'est noté."),
+        ]
+        let dicts = MLXChatActor.mapMessagesHarmonyForTests(history)
+        #expect(dicts.count == 4)
+
+        // User passes through untouched.
+        #expect(dicts[0]["role"] as? String == "user")
+
+        // Tool call → assistant with a structured tool_calls array and
+        // no free-text content (which the template would reject).
+        #expect(dicts[1]["role"] as? String == "assistant")
+        #expect(dicts[1]["content"] == nil)
+        let calls = try #require(dicts[1]["tool_calls"] as? [[String: any Sendable]])
+        let fn = try #require(calls.first?["function"] as? [String: any Sendable])
+        #expect(fn["name"] as? String == "save_memory")
+        let args = try #require(fn["arguments"] as? [String: any Sendable])
+        #expect(args["title"] as? String == "User")
+        #expect(args["content"] as? String == "Sébastien")
+        // NSNumber disambiguation: int stays Int, bool stays Bool.
+        #expect(args["count"] as? Int == 3)
+        #expect(args["flag"] as? Bool == true)
+
+        // Tool result → `tool` role.
+        #expect(dicts[2]["role"] as? String == "tool")
+        #expect(dicts[2]["content"] as? String == "Mémorisé.")
+
+        // Plain assistant answer kept as content.
+        #expect(dicts[3]["role"] as? String == "assistant")
+        #expect(dicts[3]["content"] as? String == "C'est noté.")
+    }
+
     // MARK: - Helpers
 
     private func plainText(_ events: [StreamEvent]) -> String {

@@ -67,10 +67,19 @@ actor MLXChatActor {
 
                 do {
                     let container = try await loadIfNeeded()
-                    let userInput = UserInput(
-                        chat: Self.mapMessages(messages),
-                        tools: tools.isEmpty ? nil : tools.compactMap(Self.mapTool)
-                    )
+                    // gpt-oss speaks OpenAI's Harmony format: its chat
+                    // template needs assistant tool calls in a structured
+                    // `tool_calls` field (free text raises a Jinja
+                    // exception), and mlx-swift-lm has no Harmony parser,
+                    // so we both build the prompt and parse the output
+                    // ourselves.
+                    let isHarmony = modelID.localizedCaseInsensitiveContains("gpt-oss")
+                        || modelID.localizedCaseInsensitiveContains("gpt_oss")
+                        || modelID.localizedCaseInsensitiveContains("gptoss")
+                    let mappedTools = tools.isEmpty ? nil : tools.compactMap(Self.mapTool)
+                    let userInput = isHarmony
+                        ? UserInput(messages: Self.mapMessagesHarmony(messages), tools: mappedTools)
+                        : UserInput(chat: Self.mapMessages(messages), tools: mappedTools)
                     let lmInput = try await container.prepare(input: userInput)
                     let params = GenerateParameters(
                         maxTokens: 4096,
@@ -94,12 +103,6 @@ actor MLXChatActor {
                     // buffered parser strips them from the answer.
                     let needsGemma4 = modelID.localizedCaseInsensitiveContains("gemma-4")
                         || modelID.localizedCaseInsensitiveContains("gemma4")
-                    // gpt-oss speaks the Harmony channel format, which
-                    // mlx-swift-lm has no tool parser for — handle it
-                    // with a dedicated stateful parser.
-                    let isHarmony = modelID.localizedCaseInsensitiveContains("gpt-oss")
-                        || modelID.localizedCaseInsensitiveContains("gpt_oss")
-                        || modelID.localizedCaseInsensitiveContains("gptoss")
                     let blocks = needsGemma4 ? Self.gemma4Blocks : Self.thinkBlocks
                     var streamBuffer = ""
                     var harmony = HarmonyParser()
@@ -374,6 +377,70 @@ actor MLXChatActor {
             case .toolResult:
                 return .tool(msg.content)
             }
+        }
+    }
+
+    /// Builds raw Harmony message dicts for gpt-oss. The gpt-oss chat
+    /// template (unlike `Chat.Message`, which is role + content only)
+    /// requires assistant tool calls in a structured `tool_calls`
+    /// field and tool results in a `tool` role message — anything else
+    /// raises a Jinja `TemplateException`. We feed the template these
+    /// dicts directly through `UserInput(messages:)`.
+    private static func mapMessagesHarmony(_ messages: [ChatMessage]) -> [[String: any Sendable]] {
+        messages.map { msg in
+            switch msg.role {
+            case .system:
+                return ["role": "system", "content": msg.content]
+            case .user:
+                return ["role": "user", "content": msg.content]
+            case .assistant:
+                return ["role": "assistant", "content": msg.content]
+            case .toolCall:
+                return [
+                    "role": "assistant",
+                    "tool_calls": [[
+                        "type": "function",
+                        "function": [
+                            "name": msg.toolName ?? "unknown",
+                            "arguments": sendableJSONObject(msg.content),
+                        ] as [String: any Sendable],
+                    ] as [String: any Sendable]],
+                ]
+            case .toolResult:
+                return ["role": "tool", "content": msg.content]
+            }
+        }
+    }
+
+    /// Parses a JSON-object string into native Swift `Sendable` values
+    /// for the Jinja rendering context. The template re-serialises this
+    /// with `|tojson`, so types must survive the round-trip; returns an
+    /// empty object when parsing fails.
+    private static func sendableJSONObject(_ json: String) -> [String: any Sendable] {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data),
+              let dict = obj as? [String: Any]
+        else { return [:] }
+        return dict.compactMapValues(sendableJSONValue)
+    }
+
+    private static func sendableJSONValue(_ value: Any) -> (any Sendable)? {
+        switch value {
+        case let s as String:
+            return s
+        case let n as NSNumber:
+            // NSNumber conflates Bool/Int/Double — disambiguate so the
+            // template re-serialises the right JSON type. (`true as? Int`
+            // succeeds, so the Bool check must come first.)
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue }
+            if CFNumberIsFloatType(n) { return n.doubleValue }
+            return n.intValue
+        case let arr as [Any]:
+            return arr.compactMap(sendableJSONValue)
+        case let dict as [String: Any]:
+            return dict.compactMapValues(sendableJSONValue)
+        default:
+            return nil
         }
     }
 
@@ -764,6 +831,13 @@ actor MLXChatActor {
             for try await event in stream { events.append(event) }
         } catch {}
         return events
+    }
+
+    /// Test-only: the raw Harmony message dicts for gpt-oss, so the
+    /// tool-call / tool-result shaping the chat template depends on can
+    /// be asserted without a live model.
+    static func mapMessagesHarmonyForTests(_ messages: [ChatMessage]) -> [[String: any Sendable]] {
+        mapMessagesHarmony(messages)
     }
 
     /// Test-only: the number of images attached to each mapped message,
