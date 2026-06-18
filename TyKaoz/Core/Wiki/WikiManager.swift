@@ -40,7 +40,7 @@ final class WikiManager {
         static func forProvider(_ providerID: String) -> EmbedderDefaults {
             switch providerID {
             case "mlx":
-                return .init(modelID: "mlx-community/bge-m3-mlx-4bit", dimension: 1024)
+                return .init(modelID: "TyKaoz/bge-m3-4bit", dimension: 1024)
             case "ollama":
                 return .init(modelID: "nomic-embed-text", dimension: 768)
             case "localOpenAI":

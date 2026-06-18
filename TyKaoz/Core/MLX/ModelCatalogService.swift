@@ -96,7 +96,7 @@ final class ModelCatalogService {
       "updated_at": "2026-06-07",
       "models": [
         {
-          "id": "mlx-community/bge-m3-mlx-4bit",
+          "id": "TyKaoz/bge-m3-4bit",
           "name": "BGE-M3 (4-bit)",
           "publisher": "BAAI",
           "description": "Multilingue (100+ langues), 1024 dim. Bon défaut pour un wiki en français.",
@@ -107,7 +107,7 @@ final class ModelCatalogService {
           "recommended_ram_gb": 8,
           "recommended": true,
           "languages": ["en", "fr", "es", "de", "it", "pt", "zh", "ja", "ko", "ar", "ru", "hi"],
-          "size_bytes": 353370112,
+          "size_bytes": 337056865,
           "dimension": 1024,
           "max_seq_len": 8192
         },

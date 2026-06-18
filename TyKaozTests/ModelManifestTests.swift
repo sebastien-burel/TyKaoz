@@ -114,4 +114,16 @@ struct ModelManifestTests {
         #expect(manifest.models.contains { $0.category == .embedding })
         #expect(manifest.models.contains { $0.category == .chat })
     }
+
+    @Test func mlxEmbedderDefaultIsACatalogEmbedding() throws {
+        // The default MLX embedding model must exist as an embedding in
+        // the bundled catalog, otherwise the wiki points at a model the
+        // install/selection UI doesn't know about (the bug this guards).
+        let manifest = try JSONDecoder().decode(
+            ModelManifest.self,
+            from: Data(ModelCatalogService.bundledManifestJSON.utf8)
+        )
+        let defaultID = WikiManager.EmbedderDefaults.forProvider("mlx").modelID
+        #expect(manifest.models.contains { $0.id == defaultID && $0.category == .embedding })
+    }
 }

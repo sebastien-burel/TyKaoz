@@ -6,6 +6,7 @@ import SwiftUI
 struct WikiSettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(WikiManager.self) private var wiki
+    @Environment(ModelCatalogService.self) private var catalog
 
     @State private var reindexing = false
     @State private var rebuilding = false
@@ -23,7 +24,7 @@ struct WikiSettingsView: View {
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    Text("Embedder : \(wiki.activeEmbedderURL?.absoluteString ?? "non configuré (voir le provider ci-dessous)")")
+                    Text("Embedder : \(embedderSummary)")
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -40,17 +41,22 @@ struct WikiSettingsView: View {
                     .pickerStyle(.segmented)
                     .onChange(of: settings.wikiEmbeddingProviderID) { _, newValue in
                         // Each runtime has its own canonical model
-                        // ID + dimension. The text field & stepper
-                        // below stay editable, but switching the
-                        // picker resets them to known-good values
-                        // so the user doesn't ship `nomic-embed-text`
-                        // (Ollama tag) into an HF-bound MLX path.
+                        // ID + dimension. Switching the picker resets
+                        // them to known-good values so the user doesn't
+                        // ship `nomic-embed-text` (Ollama tag) into an
+                        // HF-bound MLX path. For MLX, prefer a catalog
+                        // model that's already installed.
                         let defaults = WikiManager.EmbedderDefaults.forProvider(newValue)
-                        settings.wikiEmbeddingModelID = defaults.modelID
-                        if settings.wikiEmbeddingDimension != defaults.dimension {
+                        let modelID = newValue == "mlx"
+                            ? (preferredMLXEmbeddingID() ?? defaults.modelID)
+                            : defaults.modelID
+                        let dimension = (newValue == "mlx"
+                            ? catalog.entry(forID: modelID)?.dimension : nil) ?? defaults.dimension
+                        settings.wikiEmbeddingModelID = modelID
+                        if settings.wikiEmbeddingDimension != dimension {
                             Task {
                                 rebuilding = true
-                                settings.wikiEmbeddingDimension = defaults.dimension
+                                settings.wikiEmbeddingDimension = dimension
                                 await wiki.rebuildIndex(settings: settings)
                                 rebuilding = false
                             }
@@ -71,27 +77,42 @@ struct WikiSettingsView: View {
                 }
 
                 Section("Modèle d'embedding") {
-                    TextField(
-                        "Identifiant du modèle",
-                        text: $settings.wikiEmbeddingModelID,
-                        prompt: Text("nomic-embed-text, bge-m3, BAAI/bge-m3…")
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .font(Brand.Fonts.mono(12))
+                    if settings.wikiEmbeddingProviderID == "mlx" {
+                        // The MLX embedder runs a catalog model; pick from
+                        // the same list as the « Modèles d'embedding »
+                        // panel so the two stay in sync. Dimension follows
+                        // the model.
+                        Picker("Modèle", selection: mlxModelBinding) {
+                            ForEach(catalog.embeddings) { model in
+                                Text(mlxModelLabel(model)).tag(model.id)
+                            }
+                        }
+                        Text("Dimension : \(settings.wikiEmbeddingDimension) (déterminée par le modèle)")
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        TextField(
+                            "Identifiant du modèle",
+                            text: $settings.wikiEmbeddingModelID,
+                            prompt: Text("nomic-embed-text, bge-m3, BAAI/bge-m3…")
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(Brand.Fonts.mono(12))
 
-                    Stepper(
-                        "Dimension : \(settings.wikiEmbeddingDimension)",
-                        value: $settings.wikiEmbeddingDimension,
-                        in: 128...4096,
-                        step: 128
-                    )
-                    Text("""
-                    La dimension est figée à la création de la base. \
-                    Changer après coup demande une migration « rebuild vectoriel » \
-                    (pas encore exposée).
-                    """)
-                        .font(Brand.Fonts.body(11))
-                        .foregroundStyle(.secondary)
+                        Stepper(
+                            "Dimension : \(settings.wikiEmbeddingDimension)",
+                            value: $settings.wikiEmbeddingDimension,
+                            in: 128...4096,
+                            step: 128
+                        )
+                        Text("""
+                        La dimension est figée à la création de la base. \
+                        Changer après coup demande une migration « rebuild vectoriel » \
+                        (pas encore exposée).
+                        """)
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Indexation") {
@@ -149,6 +170,67 @@ struct WikiSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear(perform: healStaleMLXModelID)
+    }
+
+    // MARK: - Embedder summary + MLX model selection
+
+    /// Human-readable description of the active embedder for the status
+    /// line: model + where it runs. Never "non configuré" once a model
+    /// is set (MLX has no URL but is configured all the same).
+    private var embedderSummary: String {
+        let model = settings.wikiEmbeddingModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !model.isEmpty else { return "non configuré (choisis un modèle ci-dessous)" }
+        if let url = wiki.activeEmbedderURL {
+            return "\(model) · \(url.absoluteString)"
+        }
+        return "\(model) · sur ce Mac"
+    }
+
+    /// Selection binding for the MLX embedding picker. Writing a model id
+    /// also pulls its dimension from the catalog (rebuilding only if the
+    /// dimension actually changes — all bge-m3 variants are 1024).
+    private var mlxModelBinding: Binding<String> {
+        Binding(
+            get: { settings.wikiEmbeddingModelID },
+            set: { selectMLXModel($0) }
+        )
+    }
+
+    private func selectMLXModel(_ id: String) {
+        settings.wikiEmbeddingModelID = id
+        guard let dim = catalog.entry(forID: id)?.dimension,
+              dim != settings.wikiEmbeddingDimension else { return }
+        Task {
+            rebuilding = true
+            settings.wikiEmbeddingDimension = dim
+            await wiki.rebuildIndex(settings: settings)
+            rebuilding = false
+        }
+    }
+
+    private func mlxModelLabel(_ model: CatalogModel) -> String {
+        let installed = MLXModelStore.shared.isInstalled(modelID: model.id)
+        return installed ? "\(model.name) — installé" : "\(model.name) — à télécharger"
+    }
+
+    /// A catalog embedding model to default to: an already-installed one
+    /// first, then the recommended/first entry.
+    private func preferredMLXEmbeddingID() -> String? {
+        let installed = catalog.embeddings.first { MLXModelStore.shared.isInstalled(modelID: $0.id) }
+        let recommended = catalog.embeddings.first { $0.recommended }
+        return (installed ?? recommended ?? catalog.embeddings.first)?.id
+    }
+
+    /// Repairs a stored MLX embedding id that isn't in the catalog (e.g.
+    /// the legacy `mlx-community/bge-m3-mlx-4bit` default) by pointing it
+    /// at a real catalog model — ideally the one already installed.
+    private func healStaleMLXModelID() {
+        guard settings.wikiEmbeddingProviderID == "mlx" else { return }
+        let known = Set(catalog.embeddings.map(\.id))
+        guard !known.contains(settings.wikiEmbeddingModelID),
+              let preferred = preferredMLXEmbeddingID() else { return }
+        selectMLXModel(preferred)
     }
 
     @ViewBuilder
