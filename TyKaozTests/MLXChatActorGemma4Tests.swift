@@ -68,6 +68,19 @@ struct MLXChatActorGemma4Tests {
         #expect(dict["content"] as? String == "Hello, world")
     }
 
+    /// Real Gemma 4 26B repro: only the first key keeps an opening
+    /// quote (from `{"`); the second is fully bare (`,title:`), and
+    /// the French values carry colons and commas that must survive.
+    @Test
+    func parsesJSONStyleWithBareKeyAfterComma() throws {
+        let raw = #"{"name":"save_memory","arguments":{"content:<|"|>Épouse : Muriel, née le 9 février 1966.<|"|>,title:<|"|>Informations sur l'épouse de Sébastien<|"|>}}"#
+        let parsed = try #require(MLXChatActor.parseGemma4PayloadForTests(raw))
+        #expect(parsed.name == "save_memory")
+        let dict = try jsonDict(parsed.argumentsJSON)
+        #expect(dict["content"] as? String == "Épouse : Muriel, née le 9 février 1966.")
+        #expect(dict["title"] as? String == "Informations sur l'épouse de Sébastien")
+    }
+
     // MARK: - Helpers
 
     private func jsonDict(_ json: String) throws -> [String: Any] {

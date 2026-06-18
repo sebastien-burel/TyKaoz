@@ -611,31 +611,53 @@ actor MLXChatActor {
             .trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return nil }
 
-        let argsBody = String(afterCall[afterCall.index(after: openBrace)..<closeBrace])
-        let escape = "<|\"|>"
+        let args = parseGemma4ArgsBody(afterCall[afterCall.index(after: openBrace)..<closeBrace])
 
-        // Tokenise the args body into "key:value" segments. Strings
-        // are wrapped in the `<|"|>` escape marker and may contain
-        // commas, so we can't naively split on commas.
+        guard let data = try? JSONSerialization.data(withJSONObject: args),
+              let json = String(data: data, encoding: .utf8)
+        else { return nil }
+        return (name, json)
+    }
+
+    /// Tokenises a Gemma 4 argument body — `key:value, key:<|"|>str<|"|>`
+    /// — into a dictionary. String values are wrapped in the `<|"|>`
+    /// escape marker and may contain commas, colons and braces, so we
+    /// can't naively split. Keys may be bare (`k`), half-quoted (`"k`)
+    /// or fully quoted (`"k"`) depending on the model's mood; we strip
+    /// the surrounding quotes either way.
+    private static func parseGemma4ArgsBody(_ argsBody: Substring) -> [String: Any] {
+        let escape = "<|\"|>"
         var args: [String: Any] = [:]
-        var remaining = argsBody[...]
+        var remaining = argsBody
         while !remaining.isEmpty {
             // Trim leading whitespace / commas.
             while let first = remaining.first, first == "," || first.isWhitespace {
                 remaining = remaining.dropFirst()
             }
             guard let colon = remaining.firstIndex(of: ":") else { break }
-            let key = String(remaining[..<colon])
+            var key = String(remaining[..<colon])
                 .trimmingCharacters(in: .whitespaces)
+            // The model balances key quotes inconsistently.
+            if key.hasPrefix("\"") { key.removeFirst() }
+            if key.hasSuffix("\"") { key.removeLast() }
             remaining = remaining[remaining.index(after: colon)...]
+            while let first = remaining.first, first.isWhitespace {
+                remaining = remaining.dropFirst()
+            }
+            guard !key.isEmpty else { break }
 
             if remaining.hasPrefix(escape) {
-                // Quoted string between escape markers.
+                // String between `<|"|>` escape markers.
                 let afterOpen = remaining.dropFirst(escape.count)
                 guard let endRange = afterOpen.range(of: escape) else { break }
-                let value = String(afterOpen[..<endRange.lowerBound])
-                args[key] = value
+                args[key] = String(afterOpen[..<endRange.lowerBound])
                 remaining = afterOpen[endRange.upperBound...]
+            } else if remaining.hasPrefix("\"") {
+                // Plainly-quoted string (keys broken, value intact).
+                let afterOpen = remaining.dropFirst()
+                guard let endQuote = afterOpen.firstIndex(of: "\"") else { break }
+                args[key] = String(afterOpen[..<endQuote])
+                remaining = afterOpen[afterOpen.index(after: endQuote)...]
             } else {
                 // Bare value until the next comma.
                 let endIdx = remaining.firstIndex(of: ",") ?? remaining.endIndex
@@ -656,71 +678,89 @@ actor MLXChatActor {
                 remaining = endIdx == remaining.endIndex ? "" : remaining[remaining.index(after: endIdx)...]
             }
         }
-
-        guard let data = try? JSONSerialization.data(withJSONObject: args),
-              let json = String(data: data, encoding: .utf8)
-        else { return nil }
-        return (name, json)
+        return args
     }
 
     /// JSON-ish shape Gemma 4 sometimes emits:
-    ///   `{"name":"foo","arguments":{"k:<|"|>v<|"|>,"k2":42}}`
+    ///   `{"name":"foo","arguments":{"k:<|"|>v<|"|>,k2:<|"|>w<|"|>}}`
     /// Notable malformations the model produces in this mode:
-    /// - Keys lose their closing quote before `:` (e.g. `"k:` not `"k":`).
-    /// - String values are wrapped in `<|"|>…<|"|>` instead of `"…"`.
-    /// We patch both back into valid JSON, then parse normally.
+    /// - Keys lose quotes erratically: the first may keep its opening
+    ///   `"` (from `{"`), later ones drop both (`,k:` not `,"k":`).
+    /// - String values are wrapped in `<|"|>…<|"|>` instead of `"…"`,
+    ///   and the values are free-form (commas, colons, braces).
+    /// Rather than regex-patch this back into valid JSON — fragile
+    /// once the escapes are unwrapped — we extract the name and the
+    /// arguments body and hand the body to the same escape-aware
+    /// tokeniser the `call:` style uses.
     private static func parseGemma4JSONStyle(_ payload: String) -> (name: String, argumentsJSON: String)? {
         let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.contains("\"name\"") else { return nil }
 
-        // Step 1: replace `<|"|>X<|"|>` with `"X"`, JSON-escaping
-        // backslashes and quotes inside X so they don't break the
-        // resulting JSON. Done with a hand-walk because the marker
-        // contains characters that complicate Regex.
-        var fixed = ""
-        var rest = trimmed[...]
-        let escape = "<|\"|>"
-        while let open = rest.range(of: escape) {
-            fixed.append(contentsOf: rest[..<open.lowerBound])
-            let afterOpen = rest[open.upperBound...]
-            guard let close = afterOpen.range(of: escape) else {
-                // Unterminated escape — give up.
-                return nil
-            }
-            let raw = String(afterOpen[..<close.lowerBound])
-            let escaped = raw
-                .replacingOccurrences(of: "\\", with: "\\\\")
-                .replacingOccurrences(of: "\"", with: "\\\"")
-                .replacingOccurrences(of: "\n", with: "\\n")
-                .replacingOccurrences(of: "\r", with: "\\r")
-                .replacingOccurrences(of: "\t", with: "\\t")
-            fixed.append("\"")
-            fixed.append(escaped)
-            fixed.append("\"")
-            rest = afterOpen[close.upperBound...]
-        }
-        fixed.append(contentsOf: rest)
-
-        // Step 2: fix keys that look like `"q:` (no closing quote
-        // before the colon). Insert it.
-        // Pattern: `"`, then word chars, then `:` not preceded by `"`.
-        let keyFixRegex = #/"([A-Za-z_][A-Za-z0-9_]*):/#
-        fixed = fixed.replacing(keyFixRegex) { match in
-            "\"\(match.output.1)\":"
-        }
-
-        // Step 3: parse as JSON.
-        guard let data = fixed.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let name = object["name"] as? String,
+        guard let name = extractGemma4StringValue(forKey: "name", in: trimmed),
               !name.isEmpty,
-              let arguments = object["arguments"] as? [String: Any]
+              let argsBody = extractGemma4ArgumentsBody(in: trimmed)
         else { return nil }
 
-        guard let argsData = try? JSONSerialization.data(withJSONObject: arguments),
+        let args = parseGemma4ArgsBody(argsBody)
+        guard let argsData = try? JSONSerialization.data(withJSONObject: args),
               let argsJSON = String(data: argsData, encoding: .utf8)
         else { return nil }
         return (name, argsJSON)
+    }
+
+    /// Reads the string value for `"<key>":` — quoted plainly (`"v"`)
+    /// or with the `<|"|>` escape marker.
+    private static func extractGemma4StringValue(forKey key: String, in payload: String) -> String? {
+        guard let keyRange = payload.range(of: "\"\(key)\"") else { return nil }
+        let afterKey = payload[keyRange.upperBound...]
+        guard let colon = afterKey.firstIndex(of: ":") else { return nil }
+        var rest = afterKey[afterKey.index(after: colon)...]
+        while let first = rest.first, first.isWhitespace { rest = rest.dropFirst() }
+
+        let escape = "<|\"|>"
+        if rest.hasPrefix(escape) {
+            let afterOpen = rest.dropFirst(escape.count)
+            guard let end = afterOpen.range(of: escape) else { return nil }
+            return String(afterOpen[..<end.lowerBound])
+        }
+        guard rest.hasPrefix("\"") else { return nil }
+        let afterOpen = rest.dropFirst()
+        guard let end = afterOpen.firstIndex(of: "\"") else { return nil }
+        return String(afterOpen[..<end])
+    }
+
+    /// Returns the body inside the `"arguments":{ … }` object, brace-
+    /// matched while skipping over `<|"|>…<|"|>` escaped regions so
+    /// that braces inside free-form string values don't fool us.
+    private static func extractGemma4ArgumentsBody(in payload: String) -> Substring? {
+        guard let argsKey = payload.range(of: "\"arguments\"") else { return nil }
+        let scope = payload[argsKey.upperBound...]
+        guard let open = scope.firstIndex(of: "{") else { return nil }
+
+        let escape = "<|\"|>"
+        var depth = 0
+        var insideEscape = false
+        var i = open
+        while i < scope.endIndex {
+            if scope[i...].hasPrefix(escape) {
+                insideEscape.toggle()
+                i = scope.index(i, offsetBy: escape.count)
+                continue
+            }
+            if !insideEscape {
+                switch scope[i] {
+                case "{": depth += 1
+                case "}":
+                    depth -= 1
+                    if depth == 0 {
+                        return scope[scope.index(after: open)..<i]
+                    }
+                default: break
+                }
+            }
+            i = scope.index(after: i)
+        }
+        return nil
     }
 
     /// Wraps a TyKaoz `ToolSpec` in the OpenAI-style schema dict
