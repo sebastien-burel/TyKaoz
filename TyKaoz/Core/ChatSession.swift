@@ -30,6 +30,7 @@ final class ChatSession {
         tools: ToolRegistry = ToolRegistry(tools: []),
         memoryContext: String? = nil,
         attachments: [Message.Attachment] = [],
+        model: String? = nil,
         store: ConversationStore? = nil
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,7 +38,12 @@ final class ChatSession {
 
         self.store = store
         conversation.wrappedValue.messages.append(
-            Message(role: .user, content: trimmed, attachments: attachments.isEmpty ? nil : attachments)
+            Message(
+                role: .user,
+                content: trimmed,
+                attachments: attachments.isEmpty ? nil : attachments,
+                model: model
+            )
         )
         state = .streaming
 

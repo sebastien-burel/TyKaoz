@@ -107,11 +107,14 @@ struct ChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(turns) { turn in
+                        ForEach(Self.decorate(turns), id: \.turn.id) { item in
+                            if let marker = item.marker {
+                                ModelMarker(label: marker)
+                            }
                             TurnView(
-                                turn: turn,
+                                turn: item.turn,
                                 conversation: conversation,
-                                isLive: turn.id == lastTurnID
+                                isLive: item.turn.id == lastTurnID
                                     && session.state == .streaming
                             )
                         }
@@ -350,8 +353,37 @@ struct ChatView: View {
             tools: tools,
             memoryContext: settings.isToolEnabled("read_memory") ? memory.promptContext : nil,
             attachments: attachments,
+            model: activeModelLabel,
             store: store
         )
+    }
+
+    /// "Provider · model" label for the active model, stamped on the user
+    /// message so the transcript can flag where the model changed.
+    private var activeModelLabel: String? {
+        let providerName = ProviderID(providerID)?.displayName ?? providerID
+        if let model = activeModelForCurrentProvider(), !model.isEmpty {
+            return "\(providerName) · \(model)"
+        }
+        return providerName
+    }
+
+    /// Pairs each turn with a model label to display *above* it — set only
+    /// on the first turn of a run on a given model (i.e. where the model
+    /// differs from the previous turn's). Turns without a recorded model
+    /// (older conversations) carry no marker and don't reset the tracking.
+    static func decorate(
+        _ turns: [Conversation.Turn]
+    ) -> [(turn: Conversation.Turn, marker: String?)] {
+        var out: [(turn: Conversation.Turn, marker: String?)] = []
+        var lastModel: String?
+        for turn in turns {
+            let model = turn.userMessage.model
+            let marker = (model != nil && model != lastModel) ? model : nil
+            out.append((turn: turn, marker: marker))
+            if model != nil { lastModel = model }
+        }
+        return out
     }
 
     /// Images per message: MLX VLMs (Gemma) accept a single image per
@@ -744,6 +776,33 @@ private struct TurnView: View {
                     .id(error.id)
             }
         }
+    }
+}
+
+/// Centered divider marking where the active model changed in the
+/// transcript. Purely a visual cue derived from the user message's
+/// `model` label; nothing here is sent to the LLM.
+private struct ModelMarker: View {
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            line
+            Text(label)
+                .font(Brand.Fonts.mono(11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .layoutPriority(1)
+            line
+        }
+        .padding(.vertical, 2)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var line: some View {
+        Rectangle()
+            .fill(Brand.Colors.slate.opacity(0.15))
+            .frame(height: 1)
     }
 }
 

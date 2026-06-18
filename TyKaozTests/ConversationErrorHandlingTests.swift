@@ -64,6 +64,29 @@ struct ConversationErrorHandlingTests {
         #expect(conversation.messages.last?.content.isEmpty == false)
     }
 
+    @Test
+    func modelMarkerShownOnFirstUseAndOnChange() {
+        func userTurn(_ text: String, model: String?) -> [Message] {
+            [Message(role: .user, content: text, model: model),
+             Message(role: .assistant, content: "ok")]
+        }
+        let convo = Conversation(title: "t", messages:
+            userTurn("a", model: "Sur ce Mac · gpt-oss")       // first → marker
+            + userTurn("b", model: "Sur ce Mac · gpt-oss")     // same → none
+            + userTurn("c", model: "Ollama · qwen")            // changed → marker
+            + userTurn("d", model: nil)                        // legacy → none, no reset
+            + userTurn("e", model: "Ollama · qwen")            // same as last known → none
+        )
+        let markers = ChatView.decorate(convo.turns).map(\.marker)
+        #expect(markers == [
+            "Sur ce Mac · gpt-oss",
+            nil,
+            "Ollama · qwen",
+            nil,
+            nil,
+        ])
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(2),
         _ condition: @MainActor () -> Bool

@@ -64,6 +64,12 @@ struct Message: Identifiable, Hashable, Codable {
     /// the message that owns the part — mostly `.toolCall` messages.
     var thoughtSignature: String?
 
+    /// Label of the model that answered this turn (e.g. "Sur ce Mac ·
+    /// gpt-oss-20b"). Set on the `.user` message at send time so the UI
+    /// can mark where the active model changed mid-conversation. Purely
+    /// display metadata — never sent to the LLM.
+    var model: String?
+
     init(
         id: UUID = UUID(),
         role: Role,
@@ -74,7 +80,8 @@ struct Message: Identifiable, Hashable, Codable {
         toolName: String? = nil,
         toolIsError: Bool? = nil,
         reasoningContent: String? = nil,
-        thoughtSignature: String? = nil
+        thoughtSignature: String? = nil,
+        model: String? = nil
     ) {
         self.id = id
         self.role = role
@@ -86,5 +93,6 @@ struct Message: Identifiable, Hashable, Codable {
         self.toolIsError = toolIsError
         self.reasoningContent = reasoningContent
         self.thoughtSignature = thoughtSignature
+        self.model = model
     }
 }
