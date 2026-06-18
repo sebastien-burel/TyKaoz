@@ -61,7 +61,17 @@ struct Conversation: Identifiable, Hashable, Codable {
             // them out of the turn's body (otherwise they'd be hidden in
             // the collapsible intermediate-steps disclosure).
             let error = all.last { $0.role == .error }
-            let collected = all.filter { $0.role != .error }
+            // Drop empty assistant placeholders (no text, reasoning or
+            // image): they only ever rendered as a "…" bubble, which the
+            // live streaming indicator now replaces.
+            let collected = all.filter { msg in
+                if msg.role == .error { return false }
+                let isEmptyPlaceholder = msg.role == .assistant
+                    && msg.content.isEmpty
+                    && (msg.reasoningContent ?? "").isEmpty
+                    && (msg.attachments ?? []).isEmpty
+                return !isEmptyPlaceholder
+            }
 
             if let finalIdx = collected.lastIndex(where: {
                 $0.role == .assistant

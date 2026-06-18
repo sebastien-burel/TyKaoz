@@ -488,9 +488,10 @@ private struct MessageBubble: View {
                !reasoning.isEmpty {
                 reasoningDisclosure(reasoning)
             }
-            // Skip the "…" text bubble for an assistant that returned only
-            // an image (no text).
-            if !message.content.isEmpty || (message.role == .assistant && imageURLs.isEmpty) {
+            // No text bubble for an empty message — an in-flight assistant
+            // shows the live streaming indicator instead of a "…" bubble,
+            // and an image-only assistant just shows its thumbnail.
+            if !message.content.isEmpty {
             Markdown(displayText)
                 .markdownTextStyle {
                     FontFamily(.custom("Inter Tight"))
@@ -671,7 +672,7 @@ private struct MessageBubble: View {
     }
 
     private var displayText: String {
-        message.content.isEmpty && message.role == .assistant ? "…" : message.content
+        message.content
     }
 
     private var background: some ShapeStyle {
@@ -731,10 +732,38 @@ private struct TurnView: View {
                     .id(final.id)
             }
 
+            // While this turn is still running and no answer text has
+            // arrived yet (waiting, reasoning or between tool rounds),
+            // show a spinner with the elapsed time.
+            if isLive && turn.finalAssistant == nil {
+                StreamingIndicator(start: turn.userMessage.timestamp)
+            }
+
             if let error = turn.error {
                 ErrorBanner(message: error.content)
                     .id(error.id)
             }
+        }
+    }
+}
+
+/// Animated "request in flight" indicator. Shows a spinner and, once the
+/// turn has been running a couple of seconds, the elapsed time in
+/// parentheses — like an agent runner.
+private struct StreamingIndicator: View {
+    let start: Date
+
+    var body: some View {
+        TimelineView(.periodic(from: start, by: 1)) { context in
+            let elapsed = max(0, Int(context.date.timeIntervalSince(start)))
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(elapsed >= 2 ? "Génération… (\(elapsed) s)" : "Génération…")
+                    .font(Brand.Fonts.body(12))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 2)
         }
     }
 }
