@@ -94,19 +94,30 @@ actor MLXChatActor {
                     // buffered parser strips them from the answer.
                     let needsGemma4 = modelID.localizedCaseInsensitiveContains("gemma-4")
                         || modelID.localizedCaseInsensitiveContains("gemma4")
+                    // gpt-oss speaks the Harmony channel format, which
+                    // mlx-swift-lm has no tool parser for — handle it
+                    // with a dedicated stateful parser.
+                    let isHarmony = modelID.localizedCaseInsensitiveContains("gpt-oss")
+                        || modelID.localizedCaseInsensitiveContains("gpt_oss")
+                        || modelID.localizedCaseInsensitiveContains("gptoss")
                     let blocks = needsGemma4 ? Self.gemma4Blocks : Self.thinkBlocks
                     var streamBuffer = ""
+                    var harmony = HarmonyParser()
 
                     for await event in stream {
                         if Task.isCancelled { break }
                         switch event {
                         case .chunk(let text):
-                            Self.processStreamChunk(
-                                text,
-                                blocks: blocks,
-                                buffer: &streamBuffer,
-                                continuation: continuation
-                            )
+                            if isHarmony {
+                                harmony.consume(text, into: continuation)
+                            } else {
+                                Self.processStreamChunk(
+                                    text,
+                                    blocks: blocks,
+                                    buffer: &streamBuffer,
+                                    continuation: continuation
+                                )
+                            }
                         case .toolCall(let call):
                             // MLX `ToolCall` has no id; synthesise
                             // one so TyKaoz's ChatSession can route
@@ -129,7 +140,9 @@ actor MLXChatActor {
                             break
                         }
                     }
-                    if !streamBuffer.isEmpty {
+                    if isHarmony {
+                        harmony.finish(into: continuation)
+                    } else if !streamBuffer.isEmpty {
                         // Flush whatever remains: a leftover half-marker
                         // that turned out to be literal text, or trailing
                         // content. Emit as text so we don't swallow it.
@@ -551,6 +564,168 @@ actor MLXChatActor {
         }
     }
 
+    // MARK: - Harmony (gpt-oss) streaming parser
+
+    /// Streaming parser for OpenAI's **Harmony** response format used by
+    /// gpt-oss. The model emits a sequence of channel messages:
+    ///   `[<|start|>assistant]<|channel|>CHANNEL[ to=RECIP][ <|constrain|>json]<|message|>CONTENT<term>`
+    /// where `<term>` is `<|end|>`, `<|call|>` (tool calls) or
+    /// `<|return|>` (final turn). Channels route as: `final` → answer
+    /// text, `analysis` → reasoning (hidden by the chat view),
+    /// `commentary to=functions.NAME` → a tool call whose CONTENT is the
+    /// JSON arguments. mlx-swift-lm has no Harmony tool parser (gpt_oss
+    /// falls back to the `<tool_call>` JSON format, which gpt-oss never
+    /// emits), so without this the raw tokens leak into the chat.
+    private struct HarmonyParser {
+        private enum Phase { case header, content }
+        private enum Kind: Equatable { case text, reasoning, tool, ignore }
+
+        private var buffer = ""
+        private var phase: Phase = .header
+        private var kind: Kind = .ignore
+        private var toolName = ""
+        private var toolArgs = ""
+
+        private static let channel = "<|channel|>"
+        private static let message = "<|message|>"
+        private static let start = "<|start|>"
+        private static let end = "<|end|>"
+        private static let call = "<|call|>"
+        private static let ret = "<|return|>"
+        /// Longest token is `<|constrain|>` (13 chars). Hold back this
+        /// many trailing chars so a token split across chunks isn't
+        /// emitted as content.
+        private static let safeTail = 12
+
+        mutating func consume(
+            _ text: String,
+            into cont: AsyncThrowingStream<StreamEvent, Error>.Continuation
+        ) {
+            buffer += text
+            while phase == .header ? scanHeader() : scanContent(into: cont) {}
+        }
+
+        /// Flushes any trailing content left without a closing token.
+        mutating func finish(
+            into cont: AsyncThrowingStream<StreamEvent, Error>.Continuation
+        ) {
+            if phase == .content, !buffer.isEmpty {
+                emitContent(buffer, into: cont)
+                buffer = ""
+            }
+            if kind == .tool { finishMessage(into: cont) }
+        }
+
+        /// In `.header`: discard structural tokens until a full
+        /// `<|channel|>…<|message|>` header is in the buffer, then
+        /// configure routing for the message that follows.
+        private mutating func scanHeader() -> Bool {
+            guard let ch = buffer.range(of: Self.channel) else {
+                // No channel marker yet — drop structural text but keep a
+                // possible partial `<|channel|>` tail.
+                if buffer.count > Self.safeTail {
+                    buffer = String(buffer.suffix(Self.safeTail))
+                }
+                return false
+            }
+            let afterCh = buffer[ch.upperBound...]
+            guard let msg = afterCh.range(of: Self.message) else {
+                // Header not complete yet — keep from `<|channel|>` on.
+                buffer = String(buffer[ch.lowerBound...])
+                return false
+            }
+            configure(header: String(afterCh[..<msg.lowerBound]))
+            buffer = String(afterCh[msg.upperBound...])
+            phase = .content
+            return true
+        }
+
+        /// Parses a channel header like `commentary to=functions.save_memory <|constrain|>json`.
+        private mutating func configure(header: String) {
+            let trimmed = header.trimmingCharacters(in: .whitespaces)
+            let channelName = trimmed.prefix { !$0.isWhitespace }
+            toolName = ""
+            toolArgs = ""
+            if let to = trimmed.range(of: "to=") {
+                var name = String(trimmed[to.upperBound...].prefix { !$0.isWhitespace })
+                if name.hasPrefix("functions.") {
+                    name = String(name.dropFirst("functions.".count))
+                }
+                toolName = name
+            }
+            switch channelName {
+            case "final": kind = .text
+            case "analysis": kind = .reasoning
+            default: kind = toolName.isEmpty ? .text : .tool
+            }
+        }
+
+        /// In `.content`: stream content to the right channel until the
+        /// earliest message terminator, then return to `.header`.
+        private mutating func scanContent(
+            into cont: AsyncThrowingStream<StreamEvent, Error>.Continuation
+        ) -> Bool {
+            // `<|start|>` / `<|channel|>` begin the *next* message, so
+            // leave them in the buffer for the header pass; the others
+            // are consumed.
+            let consumed = [Self.end, Self.call, Self.ret]
+            let kept = [Self.start, Self.channel]
+            var hit: (Range<String.Index>, keep: Bool)?
+            for (markers, keep) in [(consumed, false), (kept, true)] {
+                for m in markers {
+                    if let r = buffer.range(of: m), hit == nil || r.lowerBound < hit!.0.lowerBound {
+                        hit = (r, keep)
+                    }
+                }
+            }
+            guard let hit else {
+                // No terminator — flush all but a safe tail.
+                if buffer.count > Self.safeTail {
+                    let cut = buffer.index(buffer.endIndex, offsetBy: -Self.safeTail)
+                    emitContent(String(buffer[..<cut]), into: cont)
+                    buffer = String(buffer[cut...])
+                }
+                return false
+            }
+            emitContent(String(buffer[..<hit.0.lowerBound]), into: cont)
+            finishMessage(into: cont)
+            buffer = hit.keep
+                ? String(buffer[hit.0.lowerBound...])
+                : String(buffer[hit.0.upperBound...])
+            phase = .header
+            return true
+        }
+
+        private mutating func emitContent(
+            _ s: String,
+            into cont: AsyncThrowingStream<StreamEvent, Error>.Continuation
+        ) {
+            guard !s.isEmpty else { return }
+            switch kind {
+            case .text: cont.yield(.textDelta(s))
+            case .reasoning: cont.yield(.reasoningDelta(s))
+            case .tool: toolArgs += s
+            case .ignore: break
+            }
+        }
+
+        private mutating func finishMessage(
+            into cont: AsyncThrowingStream<StreamEvent, Error>.Continuation
+        ) {
+            if kind == .tool, !toolName.isEmpty {
+                let args = toolArgs.trimmingCharacters(in: .whitespacesAndNewlines)
+                cont.yield(.toolCall(
+                    id: "mlx-" + UUID().uuidString.prefix(8).lowercased(),
+                    name: toolName,
+                    argumentsJSON: args.isEmpty ? "{}" : args
+                ))
+            }
+            kind = .ignore
+            toolName = ""
+            toolArgs = ""
+        }
+    }
+
     /// Test-only: feeds `chunks` through the streaming marker parser
     /// (mirroring the chat loop, including the end flush) and returns
     /// the events it emits, so think / channel / tool routing can be
@@ -564,6 +739,24 @@ actor MLXChatActor {
                 processStreamChunk(chunk, blocks: blocks, buffer: &buffer, continuation: continuation)
             }
             if !buffer.isEmpty { continuation.yield(.textDelta(buffer)) }
+            continuation.finish()
+        }
+        var events: [StreamEvent] = []
+        do {
+            for try await event in stream { events.append(event) }
+        } catch {}
+        return events
+    }
+
+    /// Test-only: feeds `chunks` through the Harmony (gpt-oss) parser,
+    /// including the end flush, and returns the events it emits.
+    static func collectHarmonyEventsForTests(_ chunks: [String]) async -> [StreamEvent] {
+        let stream = AsyncThrowingStream<StreamEvent, Error> { continuation in
+            var parser = HarmonyParser()
+            for chunk in chunks {
+                parser.consume(chunk, into: continuation)
+            }
+            parser.finish(into: continuation)
             continuation.finish()
         }
         var events: [StreamEvent] = []
