@@ -102,9 +102,9 @@ struct ChatModelPicker: View {
         case .mlx:
             // Catalog is static and installation = "available".
             // Only show models actually on disk so the picker doesn't
-            // dangle entries that would 404 on chat().
-            let installed = catalog.chats
-                .filter { MLXModelStore.shared.isInstalled(modelID: $0.id) }
+            // dangle entries that would 404 on chat(). Curated models
+            // first, then hand-added custom slugs (labelled by slug).
+            let installed = mlxInstalledEntries
             if !installed.isEmpty {
                 Section(provider.displayName) {
                     ForEach(installed) { entry in
@@ -141,6 +141,25 @@ struct ChatModelPicker: View {
     }
 
     // MARK: - Helpers
+
+    private struct MLXEntry: Identifiable {
+        let id: String
+        let name: String
+    }
+
+    /// Installed MLX chat models offered in the picker: curated
+    /// catalog entries first (shown by display name), then hand-added
+    /// custom slugs that aren't in the catalog (shown by slug).
+    private var mlxInstalledEntries: [MLXEntry] {
+        let curated = Set(catalog.chats.map(\.id))
+        let catalogEntries = catalog.chats
+            .filter { MLXModelStore.shared.isInstalled(modelID: $0.id) }
+            .map { MLXEntry(id: $0.id, name: $0.name) }
+        let customEntries = settings.mlxCustomChatModelIDs
+            .filter { !curated.contains($0) && MLXModelStore.shared.isInstalled(modelID: $0) }
+            .map { MLXEntry(id: $0, name: $0) }
+        return catalogEntries + customEntries
+    }
 
     private func isActive(provider: ProviderID, model: String?) -> Bool {
         guard settings.selectedProviderID == provider.rawValue else { return false }

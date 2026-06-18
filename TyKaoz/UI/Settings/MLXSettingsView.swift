@@ -16,6 +16,8 @@ struct MLXSettingsView: View {
     @State private var measurements: [String: MLXChatActor.MemoryReport] = [:]
     @State private var measuring: Set<String> = []
     @State private var measureError: [String: String] = [:]
+    /// Draft slug in the "add a custom model" field.
+    @State private var customID: String = ""
 
     var body: some View {
         @Bindable var settings = settings
@@ -75,11 +77,10 @@ struct MLXSettingsView: View {
                 }
             }
 
-            if !customInstalledModels.isEmpty {
-                Section("Modèles personnalisés") {
-                    ForEach(customInstalledModels, id: \.modelID) { model in
-                        customRow(model)
-                    }
+            Section("Modèles personnalisés") {
+                addCustomRow
+                ForEach(customModelIDs, id: \.self) { id in
+                    customModelRow(id)
                 }
             }
         }
@@ -305,35 +306,136 @@ struct MLXSettingsView: View {
         }
     }
 
+    /// Text field + button to register a HuggingFace MLX chat model
+    /// by exact slug, then immediately start downloading it.
     @ViewBuilder
-    private func customRow(_ model: MLXModelStore.InstalledModel) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.modelID)
-                    .font(Brand.Fonts.mono(12))
-                Text(ByteCountFormatter.string(fromByteCount: model.sizeBytes, countStyle: .file))
-                    .font(Brand.Fonts.body(11))
+    private var addCustomRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus.circle")
                     .foregroundStyle(.secondary)
+                TextField("Ajouter un modèle HuggingFace (ex : mlx-community/gpt-oss-20b-MXFP4-Q4)", text: $customID)
+                    .textFieldStyle(.plain)
+                    .font(Brand.Fonts.mono(12))
+                    .onSubmit(addCustomModel)
+                Button("Ajouter", action: addCustomModel)
+                    .disabled(customID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            Spacer()
-            Button(role: .destructive) {
-                downloads.remove(model.modelID)
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
+            Text("""
+            Le slug doit être un dépôt MLX (poids quantifiés MLX). Le \
+            modèle est traité comme un modèle de chat et téléchargé \
+            immédiatement.
+            """)
+            .font(Brand.Fonts.body(11))
+            .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 2)
+    }
+
+    @ViewBuilder
+    private func customModelRow(_ id: String) -> some View {
+        let isInstalled = MLXModelStore.shared.isInstalled(modelID: id)
+        let progress = downloads.inflight[id]
+        let error = downloads.lastError[id]
+        let size = installed.first { $0.modelID == id }?.sizeBytes
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(id)
+                        .font(Brand.Fonts.mono(12))
+                        .textSelection(.enabled)
+                    if let size {
+                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file))
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Spacer()
+                customActions(id: id, isInstalled: isInstalled, progress: progress)
+            }
+
+            if let progress {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: min(max(progress, 0), 1))
+                        .progressViewStyle(.linear)
+                    HStack {
+                        Text("Téléchargement en cours…")
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("\(Int((progress * 100).rounded())) %")
+                            .font(Brand.Fonts.mono(11))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if let error {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.orange)
+                    .lineLimit(4)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func customActions(id: String, isInstalled: Bool, progress: Double?) -> some View {
+        if progress != nil {
+            Button("Annuler") { downloads.cancel(id) }
+        } else if isInstalled {
+            Menu {
+                Button("Re-télécharger") {
+                    downloads.remove(id)
+                    Task { _ = try? await downloads.download(id) }
+                }
+                Button("Supprimer", role: .destructive) {
+                    downloads.remove(id)
+                    settings.removeCustomMLXChatModel(id)
+                }
+            } label: {
+                Label("Installé", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+        } else {
+            HStack(spacing: 8) {
+                Button {
+                    Task { _ = try? await downloads.download(id) }
+                } label: {
+                    Label("Télécharger", systemImage: "arrow.down.circle")
+                }
+                Button(role: .destructive) {
+                    settings.removeCustomMLXChatModel(id)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func addCustomModel() {
+        guard let id = settings.addCustomMLXChatModel(customID) else { return }
+        customID = ""
+        Task { _ = try? await downloads.download(id) }
     }
 
     // MARK: - Data
 
-    /// Models installed on disk that aren't in the curated list —
-    /// users who typed a custom HF slug in the wiki settings end up
-    /// here. Letting them clean up via this panel keeps the cache
-    /// honest.
-    private var customInstalledModels: [MLXModelStore.InstalledModel] {
+    /// Custom chat slugs to list: the ones the user registered, plus
+    /// any off-catalog model already on disk (e.g. typed in the wiki
+    /// settings before this panel existed), so the cache stays honest.
+    private var customModelIDs: [String] {
         let curated = Set(catalog.models.map(\.id))
-        return installed.filter { !curated.contains($0.modelID) }
+        let orphans = installed.map(\.modelID).filter { !curated.contains($0) }
+        var seen = Set<String>()
+        return (settings.mlxCustomChatModelIDs + orphans).filter {
+            !curated.contains($0) && seen.insert($0).inserted
+        }
     }
 
     private func refresh() {

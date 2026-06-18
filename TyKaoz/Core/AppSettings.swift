@@ -383,6 +383,33 @@ final class AppSettings {
         didSet { defaults.set(mlxChatModelID, forKey: Keys.mlxChatModelID) }
     }
 
+    /// HuggingFace slugs the user added by hand (chat models outside
+    /// the curated catalog, e.g. `mlx-community/gpt-oss-20b-MXFP4-Q4`).
+    /// Persisted so they survive cache eviction and surface in the
+    /// model picker once downloaded.
+    var mlxCustomChatModelIDs: [String] {
+        didSet { defaults.set(mlxCustomChatModelIDs, forKey: Keys.mlxCustomChatModelIDs) }
+    }
+
+    /// Registers a hand-typed MLX chat model slug. Trims whitespace
+    /// and ignores empties / duplicates. Returns the normalised slug
+    /// when it was added (so the caller can kick off a download), or
+    /// `nil` otherwise.
+    @discardableResult
+    func addCustomMLXChatModel(_ id: String) -> String? {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !mlxCustomChatModelIDs.contains(trimmed) else { return nil }
+        mlxCustomChatModelIDs.append(trimmed)
+        return trimmed
+    }
+
+    /// Drops a hand-typed MLX chat model slug, clearing the active
+    /// selection if it pointed at it.
+    func removeCustomMLXChatModel(_ id: String) {
+        mlxCustomChatModelIDs.removeAll { $0 == id }
+        if mlxChatModelID == id { mlxChatModelID = nil }
+    }
+
     func isToolEnabled(_ name: String) -> Bool {
         !disabledTools.contains(name)
     }
@@ -452,6 +479,7 @@ final class AppSettings {
         let storedCap = defaults.double(forKey: Keys.mlxCacheCapGB)
         self.mlxCacheCapGB = storedCap > 0 ? storedCap : 10
         self.mlxChatModelID = defaults.string(forKey: Keys.mlxChatModelID)
+        self.mlxCustomChatModelIDs = defaults.stringArray(forKey: Keys.mlxCustomChatModelIDs) ?? []
     }
 
     private enum Keys {
@@ -475,6 +503,7 @@ final class AppSettings {
         static let wikiEmbeddingProviderID = "wiki.embeddingProviderID"
         static let mlxCacheCapGB = "mlx.cacheCapGB"
         static let mlxChatModelID = "mlx.chatModelID"
+        static let mlxCustomChatModelIDs = "mlx.customChatModelIDs"
 
         static func enabledModels(for provider: ProviderID) -> String {
             "enabled.\(provider.rawValue)"
