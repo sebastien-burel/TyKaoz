@@ -406,6 +406,18 @@ actor MLXChatActor {
             closes: ["<tool_call|>", "</tool_call>"],
             kind: .toolCall
         ),
+        // Tool-response envelopes. After a real tool round, the chat
+        // template wraps the result in `<|tool_response>…<tool_response|>`
+        // in the prompt; Gemma 4 then echoes that envelope back at the
+        // start of its final answer. Drop it — TyKaoz already renders the
+        // genuine result from its own `.toolResult` message. Accept both
+        // the native (`<tool_response|>`) and Hermes (`</tool_response>`)
+        // close forms, mirroring the tool-call block.
+        StreamBlock(
+            opens: ["<|tool_response>", "<tool_response>"],
+            closes: ["<tool_response|>", "</tool_response>"],
+            kind: .suppress
+        ),
         // Inline channel marker — Gemma 4 uses these to label
         // internal monologue. Surface as reasoning so the next
         // round can carry it back if needed; the chat view drops

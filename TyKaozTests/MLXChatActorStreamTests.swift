@@ -75,6 +75,35 @@ struct MLXChatActorStreamTests {
         #expect(!text.contains("tool_call"))
     }
 
+    /// Regression: after a real tool round, Gemma 4 echoes the
+    /// `<|tool_response>…<tool_response|>` envelope it saw in the prompt
+    /// at the start of its final answer. That envelope must be dropped —
+    /// the genuine result is rendered from TyKaoz's own `.toolResult`
+    /// message — while the natural-language answer survives.
+    @Test
+    func gemmaToolResponseEnvelopeIsSuppressed() async {
+        let events = await MLXChatActor.collectStreamEventsForTests(
+            ["<|tool_response>{\"id\":\"123\",\"title\":\"Famille\",\"content\":\"trois enfants\"}<tool_response|> J'ai enregistré l'information."],
+            gemma: true
+        )
+        let (text, _) = partition(events)
+        #expect(text.contains("J'ai enregistré l'information."))
+        #expect(!text.contains("tool_response"))
+        #expect(!text.contains("Famille"))
+    }
+
+    /// The Hermes close form (`</tool_response>`) must be suppressed too.
+    @Test
+    func gemmaHermesToolResponseEnvelopeIsSuppressed() async {
+        let events = await MLXChatActor.collectStreamEventsForTests(
+            ["<tool_response>{\"title\":\"Famille\"}</tool_response> Réponse finale."],
+            gemma: true
+        )
+        let (text, _) = partition(events)
+        #expect(text.contains("Réponse finale."))
+        #expect(!text.contains("tool_response"))
+    }
+
     /// Regression: the Gemma 4 channel marker still routes to reasoning
     /// after the parser was generalised.
     @Test
