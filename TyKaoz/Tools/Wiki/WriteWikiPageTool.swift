@@ -22,18 +22,18 @@ struct WriteWikiPageTool: Tool {
     let spec = ToolSpec(
         name: "write_wiki_page",
         description: """
-        Creates or updates a wiki page at the given relative path.
+        Creates or updates a wiki page.
 
-        BEFORE writing, ALWAYS call `search_wiki` with the topic so
-        you don't create a duplicate. If the tool detects that another
-        page already has the same title, it refuses the write and
-        returns the existing page's path, hash and full content in the
-        error message. You can then merge that content with what you
-        intended to add and re-call `write_wiki_page` with the
-        existing path + expected_hash in one extra turn.
+        To UPDATE an existing page, first `read_page` it, merge your
+        changes into its full content, then call this with that page's
+        path. A page's title is its identity: if a page with the same
+        title already exists, the tool updates THAT page in place
+        whatever path you pass — so always send the COMPLETE merged
+        markdown, since anything you omit is overwritten.
 
-        When overwriting, pass expected_hash from the read_page result
-        to detect concurrent edits. The tool normalises wikilinks
+        Optionally pass expected_hash from the read_page result to
+        detect a concurrent edit (the write is rejected if the page
+        changed since you read it). The tool normalises wikilinks
         (turns [[Title]] into [[id|Title]] when the target exists),
         stamps the frontmatter `created` / `updated` dates, writes the
         file, auto-commits via git, and re-indexes so search_wiki sees
@@ -75,9 +75,24 @@ struct WriteWikiPageTool: Tool {
         guard args.path.hasSuffix(".md"), !args.path.contains(".."), !args.path.hasPrefix("/") else {
             throw ToolError.execution(message: "Chemin invalide. Attendu : relatif sous wiki/, terminé en .md.")
         }
-        let fullURL = context.wikiRoot.appendingPathComponent(args.path)
 
-        // 2. Compare-and-swap.
+        // 2. Resolve the real target. A page's title is its identity: if
+        //    a page with this title already exists under a different path
+        //    spelling (e.g. the model writes `family/clara.md` when the
+        //    page lives at `family-clara.md`), update THAT page in place
+        //    rather than refusing. Refusing made weak local models loop
+        //    forever; every write is git-committed, so an overwrite stays
+        //    recoverable.
+        let existing = try await Self.findCollidingPage(
+            withContent: args.content,
+            atPath: args.path,
+            pool: context.pool,
+            wikiRoot: context.wikiRoot
+        )
+        let targetPath = existing?.path ?? args.path
+        let fullURL = context.wikiRoot.appendingPathComponent(targetPath)
+
+        // 3. Compare-and-swap against the resolved target.
         if let expected = args.expected_hash {
             let currentContent = (try? String(contentsOf: fullURL, encoding: .utf8)) ?? ""
             let currentHash = currentContent.isEmpty ? nil : HashStore.sha256(currentContent)
@@ -90,54 +105,43 @@ struct WriteWikiPageTool: Tool {
             }
         }
 
-        // 2b. Anti-duplicate guard: if some OTHER page already carries
-        //     the title the agent wants to write under this new path,
-        //     refuse — but enrich the error with the existing page's
-        //     path, hash and full content so the agent can merge in
-        //     one extra turn instead of doing a round-trip through
-        //     read_page first.
-        if let existing = try await Self.findCollidingPage(
-            withContent: args.content,
-            atPath: args.path,
-            pool: context.pool,
-            wikiRoot: context.wikiRoot
-        ) {
-            throw ToolError.execution(message: Self.collisionMessage(existing))
-        }
-
-        // 3. Normalise wikilinks against the live page index.
+        // 4. Normalise wikilinks against the live page index.
         let withLinks = try await Self.normaliseWikilinks(args.content, pool: context.pool)
-        // 4. Stamp frontmatter dates so the agent can't guess them
+        // 5. Stamp frontmatter dates so the agent can't guess them
         //    wrong (it doesn't know the current date). `created` is
         //    preserved from disk on overwrite; `updated` always gets
         //    today.
         let normalised = Self.stampFrontmatter(withLinks, existingPageURL: fullURL)
         let newHash = HashStore.sha256(normalised)
 
-        // 4. Atomic write.
+        // 6. Atomic write.
         try FileManager.default.createDirectory(
             at: fullURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try normalised.write(to: fullURL, atomically: true, encoding: .utf8)
 
-        // 5. Audit log via git. Best-effort.
-        let slug = args.path.replacingOccurrences(of: "/", with: "-")
+        // 7. Audit log via git. Best-effort.
+        let slug = targetPath.replacingOccurrences(of: "/", with: "-")
         let committed = GitRunner.commit(
             message: "agent: write \(slug)",
             in: context.wikiRoot,
-            relativePath: args.path
+            relativePath: targetPath
         )
 
-        // 6. Sync re-index so search_wiki sees the new content.
+        // 8. Sync re-index so search_wiki sees the new content.
         // Phase 2's file-watch will take this over.
         _ = try await context.makeIndexer().reindexAll()
 
         let gitLine = committed ? "git: commit créé" : "git: indisponible, écriture quand même"
+        let retargetNote = existing.map {
+            "\nNote : page existante « \($0.title) » mise à jour en place ; "
+                + "utilise le chemin \(targetPath) pour les prochaines modifications."
+        } ?? ""
         return """
-        Écrit \(args.path)
+        Écrit \(targetPath)
         hash: \(newHash)
-        \(gitLine)
+        \(gitLine)\(retargetNote)
         """
     }
 
@@ -232,24 +236,6 @@ struct WriteWikiPageTool: Tool {
             hash: hash,
             content: liveContent
         )
-    }
-
-    static func collisionMessage(_ existing: CollidingPage) -> String {
-        """
-        Une page wiki intitulée « \(existing.title) » existe déjà à \
-        `\(existing.path)` (hash actuel : \(existing.hash)).
-
-        Pour la mettre à jour, fusionne le contenu existant avec ta \
-        nouvelle version, puis rappelle `write_wiki_page` avec :
-          path: \(existing.path)
-          expected_hash: \(existing.hash)
-          content: <le contenu fusionné>
-
-        Contenu actuel à fusionner :
-        ----- DÉBUT PAGE EXISTANTE -----
-        \(existing.content)
-        ----- FIN PAGE EXISTANTE -----
-        """
     }
 
     /// Builds the `title → id` index from the DB and runs the pure

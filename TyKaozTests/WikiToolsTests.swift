@@ -373,7 +373,7 @@ struct WikiToolsTests {
     }
 
     @Test
-    func writeRefusesTitleCollisionOnNewPath() async throws {
+    func writeRedirectsTitleCollisionToExistingPage() async throws {
         let (ctx, tempDir) = try await Self.makeContext()
         defer { try? FileManager.default.removeItem(at: tempDir) }
 
@@ -385,30 +385,27 @@ struct WikiToolsTests {
         ])
         _ = try await tool.execute(arguments: first)
 
-        // Second write — same title (case-insensitive), different path.
+        // Second write — same title (case-insensitive) under a different
+        // path spelling. The tool must update the existing page in place
+        // instead of refusing or creating a duplicate.
         let second = try JSONSerialization.data(withJSONObject: [
             "path": "le-sucre.md",
-            "content": "---\nid: le-sucre\ntitle: le sucre\n---\nv2 nouveau"
+            "content": "---\nid: sucre\ntitle: le sucre\n---\nv2 nouveau"
         ])
-        var caughtMessage: String?
-        do {
-            _ = try await tool.execute(arguments: second)
-        } catch let e as ToolError {
-            caughtMessage = e.errorDescription
-        }
+        let result = try await tool.execute(arguments: second)
+        #expect(result.contains("sucre.md"))
 
-        #expect(caughtMessage != nil)
-        // The enriched error must include the existing path, hash hint,
-        // and the live content so the agent can merge without an extra
-        // read_page round-trip.
-        #expect(caughtMessage?.contains("sucre.md") == true)
-        #expect(caughtMessage?.contains("expected_hash") == true)
-        #expect(caughtMessage?.contains("v1 historique") == true)
-
-        // The duplicate path never lands on disk.
+        // The existing page got the new content; the duplicate path never
+        // lands on disk.
         let fm = FileManager.default
         #expect(fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("sucre.md").path))
         #expect(!fm.fileExists(atPath: ctx.wikiRoot.appendingPathComponent("le-sucre.md").path))
+        let onDisk = try String(
+            contentsOf: ctx.wikiRoot.appendingPathComponent("sucre.md"),
+            encoding: .utf8
+        )
+        #expect(onDisk.contains("v2 nouveau"))
+        #expect(!onDisk.contains("v1 historique"))
     }
 
     @Test
