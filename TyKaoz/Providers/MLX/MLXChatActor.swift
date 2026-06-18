@@ -695,26 +695,38 @@ actor MLXChatActor {
                 }
                 return false
             }
-            let afterCh = buffer[ch.upperBound...]
-            guard let msg = afterCh.range(of: Self.message) else {
+            guard let msg = buffer[ch.upperBound...].range(of: Self.message) else {
                 // Header not complete yet — keep from `<|channel|>` on.
                 buffer = String(buffer[ch.lowerBound...])
                 return false
             }
-            configure(header: String(afterCh[..<msg.lowerBound]))
-            buffer = String(afterCh[msg.upperBound...])
+            // The full header runs from the buffer start (which may hold
+            // a `<|start|>assistant to=…` role line) to `<|message|>`.
+            configure(region: String(buffer[..<msg.lowerBound]))
+            buffer = String(buffer[msg.upperBound...])
             phase = .content
             return true
         }
 
-        /// Parses a channel header like `commentary to=functions.save_memory <|constrain|>json`.
-        private mutating func configure(header: String) {
-            let trimmed = header.trimmingCharacters(in: .whitespaces)
-            let channelName = trimmed.prefix { !$0.isWhitespace }
+        /// Configures routing from a header region such as
+        /// `<|start|>assistant<|channel|>commentary to=functions.save_memory <|constrain|>json`.
+        /// The recipient `to=…` can sit before or after `<|channel|>`,
+        /// and the model sometimes runs tokens together without a space
+        /// (e.g. `…save_memory<|channel|>commentary<|constrain|>json`),
+        /// so identifiers stop at whitespace *or* the start of the next
+        /// `<|…|>` token — never letting a marker bleed into a name.
+        private mutating func configure(region: String) {
+            func ident(_ s: Substring) -> String {
+                String(s.prefix { !$0.isWhitespace && $0 != "<" })
+            }
+            var channelName = ""
+            if let ch = region.range(of: Self.channel) {
+                channelName = ident(region[ch.upperBound...])
+            }
             toolName = ""
             toolArgs = ""
-            if let to = trimmed.range(of: "to=") {
-                var name = String(trimmed[to.upperBound...].prefix { !$0.isWhitespace })
+            if let to = region.range(of: "to=") {
+                var name = ident(region[to.upperBound...])
                 if name.hasPrefix("functions.") {
                     name = String(name.dropFirst("functions.".count))
                 }

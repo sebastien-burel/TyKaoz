@@ -36,6 +36,37 @@ struct MLXChatActorHarmonyTests {
     }
 
     @Test
+    func extractsToolNameWhenTokensRunTogether() async throws {
+        // Real gpt-oss-20b repro: the recipient is followed immediately
+        // by more `<|…|>` tokens with no separating space, so the tool
+        // name must stop at `<`, not bleed into `save_memory<|channel|>…`.
+        let raw = """
+        <|channel|>commentary to=functions.save_memory<|channel|>commentary\
+        <|constrain|>json<|message|>{"title":"User personal info"}<|call|>
+        """
+        let events = await MLXChatActor.collectHarmonyEventsForTests([raw])
+        let calls = toolCalls(events)
+        #expect(calls.count == 1)
+        #expect(calls.first?.name == "save_memory")
+        let dict = try jsonDict(try #require(calls.first?.json))
+        #expect(dict["title"] as? String == "User personal info")
+    }
+
+    @Test
+    func extractsToolNameFromRoleLineRecipient() async throws {
+        // Canonical Harmony shape: the recipient sits on the role line,
+        // before `<|channel|>` — the parser must still find it.
+        let raw = """
+        <|start|>assistant to=functions.save_memory<|channel|>commentary \
+        <|constrain|>json<|message|>{"q":"sucre"}<|call|>
+        """
+        let events = await MLXChatActor.collectHarmonyEventsForTests([raw])
+        let calls = toolCalls(events)
+        #expect(calls.count == 1)
+        #expect(calls.first?.name == "save_memory")
+    }
+
+    @Test
     func streamsFinalChannelAsText() async {
         let raw = "<|channel|>final<|message|>Bonjour Sébastien !<|return|>"
         let events = await MLXChatActor.collectHarmonyEventsForTests([raw])
