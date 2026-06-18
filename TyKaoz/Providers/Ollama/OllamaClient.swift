@@ -135,11 +135,15 @@ struct OllamaClient {
                         throw OllamaClientError.network(message: "réponse non-HTTP")
                     }
                     guard (200..<300).contains(http.statusCode) else {
-                        var body = ""
+                        var raw = Data()
                         for try await byte in bytes {
-                            body.append(Character(UnicodeScalar(byte)))
-                            if body.count > 1500 { break }
+                            raw.append(byte)
+                            if raw.count > 1500 { break }
                         }
+                        // Decode as UTF-8 — Ollama error bodies are UTF-8
+                        // JSON; a byte-wise decode mangles accents and the
+                        // model content echoed back in tool-parse errors.
+                        let body = String(decoding: raw, as: UTF8.self)
                         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
                         throw OllamaClientError.http(
                             status: http.statusCode,
