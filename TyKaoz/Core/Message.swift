@@ -12,6 +12,10 @@ struct Message: Identifiable, Hashable, Codable {
         /// The app's response to a `toolCall`. `content` holds the tool
         /// output (or error message). `toolCallID` matches the call.
         case toolResult
+        /// An app-generated failure notice (a send that threw). `content`
+        /// holds the user-facing error text. Shown inline in the
+        /// transcript and **never** sent back to the LLM.
+        case error
     }
 
     /// A file attached to a message (currently images for VLM models).

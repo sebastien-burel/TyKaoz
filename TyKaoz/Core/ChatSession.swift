@@ -53,17 +53,28 @@ final class ChatSession {
             } catch is CancellationError {
                 self?.state = .idle
             } catch let error as OllamaClientError {
-                self?.state = .failed(message: error.errorDescription ?? "Erreur.")
+                self?.fail(error.errorDescription ?? "Erreur.", in: conversation)
             } catch let error as OpenAICompatibleError {
-                self?.state = .failed(message: error.errorDescription ?? "Erreur.")
+                self?.fail(error.errorDescription ?? "Erreur.", in: conversation)
             } catch let error as AnthropicClientError {
-                self?.state = .failed(message: error.errorDescription ?? "Erreur.")
+                self?.fail(error.errorDescription ?? "Erreur.", in: conversation)
             } catch let error as GoogleClientError {
-                self?.state = .failed(message: error.errorDescription ?? "Erreur.")
+                self?.fail(error.errorDescription ?? "Erreur.", in: conversation)
             } catch {
-                self?.state = .failed(message: error.localizedDescription)
+                self?.fail(error.localizedDescription, in: conversation)
             }
         }
+    }
+
+    /// Records a failed send as a persisted `.error` message in the
+    /// conversation (shown inline, never sent to the LLM) and flags the
+    /// state so the deprecated-model pruning hook can react. The empty
+    /// streaming placeholder is already removed by the loop's `defer`.
+    private func fail(_ message: String, in conversation: Binding<Conversation>) {
+        conversation.wrappedValue.messages.append(
+            Message(role: .error, content: message)
+        )
+        state = .failed(message: message)
     }
 
     func stop() {
@@ -123,7 +134,7 @@ final class ChatSession {
             let conversationID = conversation.wrappedValue.id
             history += conversation.wrappedValue.messages
                 .dropLast()
-                .map { ChatMessage($0, imageURLs: self.resolveImageURLs(for: $0, conversationID: conversationID)) }
+                .compactMap { ChatMessage($0, imageURLs: self.resolveImageURLs(for: $0, conversationID: conversationID)) }
 
             var pendingCalls: [(id: String, name: String, args: String, signature: String?)] = []
 

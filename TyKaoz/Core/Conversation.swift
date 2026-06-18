@@ -29,6 +29,9 @@ struct Conversation: Identifiable, Hashable, Codable {
         /// The last `.assistant` message of the turn with non-empty content.
         /// `nil` while the turn is still streaming and no final text yet.
         let finalAssistant: Message?
+        /// An `.error` message produced during this turn (a failed send),
+        /// rendered as an inline banner. `nil` when the turn succeeded.
+        let error: Message?
 
         var id: UUID { userMessage.id }
     }
@@ -48,11 +51,17 @@ struct Conversation: Identifiable, Hashable, Codable {
             let user = messages[i]
             i = messages.index(after: i)
 
-            var collected: [Message] = []
+            var all: [Message] = []
             while i < messages.endIndex, messages[i].role != .user {
-                collected.append(messages[i])
+                all.append(messages[i])
                 i = messages.index(after: i)
             }
+
+            // `.error` messages render as their own inline banner, so pull
+            // them out of the turn's body (otherwise they'd be hidden in
+            // the collapsible intermediate-steps disclosure).
+            let error = all.last { $0.role == .error }
+            let collected = all.filter { $0.role != .error }
 
             if let finalIdx = collected.lastIndex(where: {
                 $0.role == .assistant
@@ -63,13 +72,15 @@ struct Conversation: Identifiable, Hashable, Codable {
                 result.append(Turn(
                     userMessage: user,
                     intermediates: intermediates,
-                    finalAssistant: final
+                    finalAssistant: final,
+                    error: error
                 ))
             } else {
                 result.append(Turn(
                     userMessage: user,
                     intermediates: collected,
-                    finalAssistant: nil
+                    finalAssistant: nil,
+                    error: error
                 ))
             }
         }

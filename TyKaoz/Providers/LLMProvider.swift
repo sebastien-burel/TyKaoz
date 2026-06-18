@@ -111,16 +111,18 @@ func dropToolMessages(_ messages: [ChatMessage]) -> [ChatMessage] {
 }
 
 extension ChatMessage {
-    /// Maps a stored Message to a ChatMessage. Always succeeds — tool roles
-    /// carry their metadata through so providers can serialise them into
-    /// their own wire formats in Bloc 4.
-    init(_ message: Message, imageURLs: [URL] = []) {
+    /// Maps a stored Message to a ChatMessage. Returns `nil` for `.error`
+    /// messages — they're app-generated notices that must never reach the
+    /// LLM. Tool roles carry their metadata through so providers can
+    /// serialise them into their own wire formats.
+    init?(_ message: Message, imageURLs: [URL] = []) {
         let role: Role
         switch message.role {
         case .user:       role = .user
         case .assistant:  role = .assistant
         case .toolCall:   role = .toolCall
         case .toolResult: role = .toolResult
+        case .error:      return nil
         }
         self.init(
             role: role,

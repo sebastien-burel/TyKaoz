@@ -13,7 +13,9 @@ struct ChatView: View {
     let tools: ToolRegistry
 
     @State private var session = ChatSession()
-    @State private var draft: String = ""
+    /// Unsent input, kept per conversation (in memory) so switching
+    /// conversations doesn't carry a half-written prompt across.
+    @State private var drafts: [Conversation.ID: String] = [:]
     /// Images staged for the next message (VLM models only). Held in
     /// memory until send, then written to the conversation's attachment
     /// store. Cleared when switching conversations.
@@ -24,10 +26,6 @@ struct ChatView: View {
         VStack(spacing: 0) {
             if conversation != nil {
                 messagesScroll
-
-                if case let .failed(message) = session.state {
-                    failureBanner(message)
-                }
 
                 Divider().background(Brand.Colors.slate.opacity(0.15))
                 inputBar
@@ -140,7 +138,7 @@ struct ChatView: View {
                 if supportsImages {
                     attachButton
                 }
-                TextField(placeholder, text: $draft, axis: .vertical)
+                TextField(placeholder, text: draftBinding, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Brand.Fonts.body(14))
                     .padding(10)
@@ -278,29 +276,6 @@ struct ChatView: View {
         }
     }
 
-    private func failureBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.red)
-            Text(message)
-                .font(Brand.Fonts.body(12))
-                .foregroundStyle(Brand.Colors.ink)
-                .textSelection(.enabled)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.red.opacity(0.08))
-        .contextMenu {
-            Button("Copier l'erreur") {
-                let pb = NSPasteboard.general
-                pb.clearContents()
-                pb.setString(message, forType: .string)
-            }
-        }
-    }
-
     private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "bubble.left.and.bubble.right")
@@ -334,17 +309,26 @@ struct ChatView: View {
         return "Écrire un message…"
     }
 
+    /// The current conversation's draft, read/written by the input field.
+    /// Keyed by conversation id so each conversation keeps its own.
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { conversation.flatMap { drafts[$0.id] } ?? "" },
+            set: { if let id = conversation?.id { drafts[id] = $0 } }
+        )
+    }
+
     private var canType: Bool {
         provider != nil && conversation != nil && session.state != .streaming
     }
 
     private var canSend: Bool {
-        canType && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty)
+        canType && (!draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty)
     }
 
     private func send() {
         guard let provider, let conv = conversation else { return }
-        let text = draft
+        let text = draftBinding.wrappedValue
         // Persist staged images to the conversation's attachment store; the
         // resulting metadata rides on the user message, the file URLs reach
         // the VLM via ChatSession → MLXChatActor.
@@ -354,7 +338,7 @@ struct ChatView: View {
                 attachments.append(saved)
             }
         }
-        draft = ""
+        drafts[conv.id] = nil
         pendingImages = []
         session.send(
             text: text,
@@ -673,7 +657,7 @@ private struct MessageBubble: View {
         switch message.role {
         case .user:
             return Brand.Colors.ink.opacity(0.4)
-        case .assistant, .toolCall, .toolResult:
+        case .assistant, .toolCall, .toolResult, .error:
             // Tool messages will get their own dedicated card view in Bloc 6;
             // this branch keeps the switch exhaustive in the meantime.
             return Brand.Colors.slate.opacity(0.08)
@@ -693,21 +677,21 @@ private struct MessageBubble: View {
     private var background: some ShapeStyle {
         switch message.role {
         case .user:                              return AnyShapeStyle(Brand.Colors.slate)
-        case .assistant, .toolCall, .toolResult: return AnyShapeStyle(Color.white)
+        case .assistant, .toolCall, .toolResult, .error: return AnyShapeStyle(Color.white)
         }
     }
 
     private var textColor: Color {
         switch message.role {
         case .user:                              return Brand.Colors.paper
-        case .assistant, .toolCall, .toolResult: return Brand.Colors.ink
+        case .assistant, .toolCall, .toolResult, .error: return Brand.Colors.ink
         }
     }
 
     private var borderColor: Color {
         switch message.role {
         case .user:                              return .clear
-        case .assistant, .toolCall, .toolResult: return Brand.Colors.slate.opacity(0.15)
+        case .assistant, .toolCall, .toolResult, .error: return Brand.Colors.slate.opacity(0.15)
         }
     }
 }
@@ -745,6 +729,41 @@ private struct TurnView: View {
             if let final = turn.finalAssistant {
                 MessageBubble(message: final, imageURLs: imageURLs(for: final))
                     .id(final.id)
+            }
+
+            if let error = turn.error {
+                ErrorBanner(message: error.content)
+                    .id(error.id)
+            }
+        }
+    }
+}
+
+/// Inline failure notice rendered where a send threw. Carries no link to
+/// the LLM — it's a persisted `.error` message in the conversation.
+private struct ErrorBanner: View {
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+            Text(message)
+                .font(Brand.Fonts.body(12))
+                .foregroundStyle(Brand.Colors.ink)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.red.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contextMenu {
+            Button("Copier l'erreur") {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(message, forType: .string)
             }
         }
     }
@@ -807,7 +826,9 @@ private struct IntermediateStepsDisclosure: View {
             EmptyView()
         case .assistant:
             MessageBubble(message: message)
-        case .user:
+        case .user, .error:
+            // `.error` is lifted out of `intermediates` by `turns` and
+            // rendered as its own banner, so it never reaches here.
             EmptyView()
         }
     }
