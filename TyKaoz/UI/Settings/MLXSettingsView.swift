@@ -310,24 +310,22 @@ struct MLXSettingsView: View {
     /// by exact slug, then immediately start downloading it.
     @ViewBuilder
     private var addCustomRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "plus.circle")
-                    .foregroundStyle(.secondary)
-                TextField("Ajouter un modèle HuggingFace (ex : mlx-community/gpt-oss-20b-MXFP4-Q4)", text: $customID)
-                    .textFieldStyle(.plain)
-                    .font(Brand.Fonts.mono(12))
-                    .onSubmit(addCustomModel)
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("mlx-community/gpt-oss-20b-MXFP4-Q4", text: $customID)
+                .textFieldStyle(.roundedBorder)
+                .font(Brand.Fonts.mono(12))
+                .onSubmit(addCustomModel)
+            HStack {
+                Text("""
+                Slug HuggingFace d'un dépôt MLX. Traité comme un modèle \
+                de chat et téléchargé immédiatement.
+                """)
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(.secondary)
+                Spacer()
                 Button("Ajouter", action: addCustomModel)
                     .disabled(customID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            Text("""
-            Le slug doit être un dépôt MLX (poids quantifiés MLX). Le \
-            modèle est traité comme un modèle de chat et téléchargé \
-            immédiatement.
-            """)
-            .font(Brand.Fonts.body(11))
-            .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
     }
