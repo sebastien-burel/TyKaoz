@@ -43,4 +43,13 @@ struct AppSettingsTests {
         #expect(reloaded.serverURLString == "http://10.0.0.5:1134")
         #expect(reloaded.selectedModel == "mistral:7b")
     }
+
+    @Test
+    func migratesRemovedLocalOpenAIEmbedderToOllama() {
+        let defaults = makeDefaults()
+        defaults.set("localOpenAI", forKey: "wiki.embeddingProviderID")
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.wikiEmbeddingProviderID == "ollama")
+    }
 }

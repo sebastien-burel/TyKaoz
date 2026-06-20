@@ -362,9 +362,9 @@ final class AppSettings {
     }
 
     /// Which provider serves embeddings to the indexer + finder:
-    /// "ollama" (default) reuses `serverURL`; "localOpenAI" reuses
-    /// `localOpenAIBaseURL` + key. The wiki itself stays the same —
-    /// only the request URL changes.
+    /// "ollama" (default) reuses `serverURL`; "mlx" runs bge-m3 in-process
+    /// on Apple Silicon (no URL). The wiki itself stays the same — only the
+    /// request URL changes.
     var wikiEmbeddingProviderID: String {
         didSet { defaults.set(wikiEmbeddingProviderID, forKey: Keys.wikiEmbeddingProviderID) }
     }
@@ -475,7 +475,11 @@ final class AppSettings {
         self.wikiEmbeddingModelID = defaults.string(forKey: Keys.wikiEmbeddingModelID) ?? "nomic-embed-text"
         let storedDim = defaults.integer(forKey: Keys.wikiEmbeddingDimension)
         self.wikiEmbeddingDimension = storedDim > 0 ? storedDim : 768
-        self.wikiEmbeddingProviderID = defaults.string(forKey: Keys.wikiEmbeddingProviderID) ?? "ollama"
+        // "localOpenAI" was a removed embedder option. Coerce stale values
+        // back to Ollama so the segmented picker has a matching tag and the
+        // indexer falls on a working provider.
+        let storedEmbeddingProvider = defaults.string(forKey: Keys.wikiEmbeddingProviderID) ?? "ollama"
+        self.wikiEmbeddingProviderID = storedEmbeddingProvider == "localOpenAI" ? "ollama" : storedEmbeddingProvider
         let storedCap = defaults.double(forKey: Keys.mlxCacheCapGB)
         self.mlxCacheCapGB = storedCap > 0 ? storedCap : 10
         self.mlxChatModelID = defaults.string(forKey: Keys.mlxChatModelID)

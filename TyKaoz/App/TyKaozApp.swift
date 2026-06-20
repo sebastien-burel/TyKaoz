@@ -67,9 +67,6 @@ struct TyKaozApp: App {
                 .onChange(of: settings.serverURLString) { _, _ in
                     wikiManager.reconcile(settings: settings)
                 }
-                .onChange(of: settings.localOpenAIBaseURLString) { _, _ in
-                    wikiManager.reconcile(settings: settings)
-                }
                 .onChange(of: settings.wikiEmbeddingModelID) { _, _ in
                     wikiManager.reconcile(settings: settings)
                 }

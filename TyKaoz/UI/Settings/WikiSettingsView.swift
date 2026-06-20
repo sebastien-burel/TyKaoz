@@ -35,7 +35,6 @@ struct WikiSettingsView: View {
                 Section("Source d'embedding") {
                     Picker("Provider", selection: $settings.wikiEmbeddingProviderID) {
                         Text("Ollama").tag("ollama")
-                        Text("Compatible OpenAI (vLLM, LM Studio…)").tag("localOpenAI")
                         Text("Sur ce Mac").tag("mlx")
                     }
                     .pickerStyle(.segmented)
@@ -64,11 +63,10 @@ struct WikiSettingsView: View {
                     }
 
                     Text("""
-                    Ollama / Compatible OpenAI réutilisent l'URL du provider \
-                    correspondant. « Sur ce Mac » exécute bge-m3 directement dans \
-                    l'app via Apple Silicon — pas de serveur, modèle \
-                    téléchargé à la demande. Le provider de chat reste \
-                    indépendant.
+                    Ollama réutilise l'URL du serveur Ollama. « Sur ce Mac » \
+                    exécute bge-m3 directement dans l'app via Apple Silicon — \
+                    pas de serveur, modèle téléchargé à la demande. Le provider \
+                    de chat reste indépendant.
                     """)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)

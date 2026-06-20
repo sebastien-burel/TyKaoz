@@ -43,8 +43,6 @@ final class WikiManager {
                 return .init(modelID: "TyKaoz/bge-m3-4bit", dimension: 1024)
             case "ollama":
                 return .init(modelID: "nomic-embed-text", dimension: 768)
-            case "localOpenAI":
-                return .init(modelID: "BAAI/bge-m3", dimension: 1024)
             default:
                 return .init(modelID: "nomic-embed-text", dimension: 768)
             }
@@ -197,7 +195,6 @@ final class WikiManager {
     /// runs locally and doesn't need a base URL.
     static func embedderURL(for providerID: String, settings: AppSettings) -> URL? {
         switch providerID {
-        case "localOpenAI": return settings.localOpenAIBaseURL
         case "mlx":         return nil
         case "ollama":      return settings.serverURL
         default:            return settings.serverURL
@@ -217,14 +214,6 @@ final class WikiManager {
         switch providerID {
         case "mlx":
             return MLXEmbeddingProvider(
-                modelID: settings.wikiEmbeddingModelID,
-                dimension: settings.wikiEmbeddingDimension
-            )
-        case "localOpenAI":
-            guard let url else { return nil }
-            return LocalOpenAIEmbeddingProvider(
-                baseURL: url,
-                apiKey: settings.localOpenAIAPIKey,
                 modelID: settings.wikiEmbeddingModelID,
                 dimension: settings.wikiEmbeddingDimension
             )
