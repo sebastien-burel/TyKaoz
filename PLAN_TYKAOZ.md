@@ -1,11 +1,12 @@
 # PLAN_TYKAOZ.md
 
 > Plan de développement — app macOS native de chat LLM, privacy-first.
-> État au 2026-06-14 : phases 0-6 livrées — chat multi-provider, persistance,
-> outils externes, plugins, **backend MLX local**, **RAG/Wiki on-device**
-> (cf. PLAN_TYKAOZ_WIKI.md), et **vision + génération/édition d'images**
-> multi-provider. Reste, côté produit : **test marché du MVP RAG** ; côté
-> code : agents, recherche plein-texte, packaging/distribution.
+> État au 2026-07-08 : phases 0-6 livrées — chat multi-provider, persistance,
+> outils externes, plugins, **backend MLX local**, **RAG/Wiki on-device** avec
+> couche curation/ingestion (cf. PLAN_TYKAOZ_WIKI.md), et **vision + génération/
+> édition d'images** multi-provider (dont **ComfyUI local**). Reste, côté produit :
+> **test marché du MVP RAG** ; côté code : agents, recherche plein-texte,
+> packaging/distribution.
 > Ce plan avance **par paliers**. Chaque phase a des critères de succès
 > vérifiables (cf. CLAUDE.md, guideline 4). On ne passe à la phase suivante
 > qu'une fois les critères de la phase courante remplis.
@@ -141,11 +142,15 @@ le protocole `LLMProvider` — avec 2 cas réels sous les yeux, pas 1.
 - Tests : un provider mocké implémente le protocole et passe les tests de chat.
 
 **Au-delà du plan initial :** au lieu de s'arrêter à 2 providers, on en a
-ajouté 7 supplémentaires un par un en validant que le protocole tient :
+ajouté 8 supplémentaires un par un en validant que le protocole tient :
 OpenAI, Anthropic, Google Gemini, DeepSeek, Apple Intelligence (Foundation
-Models, on-device), Qwen Cloud (DashScope), z.ai (Zhipu GLM). Un
-`OpenAICompatibleClient` partagé absorbe Mistral / OpenAI / DeepSeek /
-Qwen / z.ai ; Anthropic, Google et Apple ont leur client dédié.
+Models, on-device), Qwen Cloud (DashScope), z.ai (Zhipu GLM), et un endpoint
+OpenAI-compatible générique (`localOpenAI`, base URL au choix). Soit **11
+providers de chat** au total. Un `OpenAICompatibleClient` partagé absorbe
+Mistral / OpenAI / DeepSeek / Qwen / z.ai / localOpenAI ; Anthropic, Google
+et Apple ont leur client dédié. S'y ajoute **ComfyUI**, provider *texte→image*
+en local (cf. « Vision & génération d'images »), qui implémente le même
+protocole mais émet une image au lieu de texte.
 
 ---
 
@@ -211,6 +216,13 @@ Entrée et sortie d'images dans le chat, multi-provider (hors plan initial).
   (DashScope), z.ai (CogView) ; image affichée + enregistrable + copiable.
 - **Édition d'images** : Gemini, OpenAI (`/images/edits`), Qwen (image dans le
   content) ; z.ai non exposé par l'API.
+- **Génération d'images en local (ComfyUI)** : provider dédié texte→image branché
+  sur un serveur ComfyUI. Chaque « modèle » est un workflow (JSON API) collé dans
+  les réglages ; le dernier message utilisateur est injecté au marqueur `%prompt%`,
+  les paramètres `%name%` et la graine sont réglables. Aucun cloud.
+- **Rendu des maths** : conversion LaTeX→Unicode à l'affichage (`MathMarkup`) —
+  les modèles qui émettent du `$…$`/`\(…\)` brut voient leur notation rendue
+  lisible sans moteur TeX ; le message stocké garde la source.
 - **Raisonnement** : volet « Réflexion » repliable, auto-déplié pendant la pensée.
 
 **Reste dans cette veine :** vision pour Ollama / localOpenAI (modèles VLM locaux).
@@ -225,14 +237,23 @@ répondre en citant les sources. C'est ici qu'on teste si quelqu'un paierait.
 Implémenté sous forme de **Wiki on-device** (détail + schéma : PLAN_TYKAOZ_WIKI.md) :
 markdown canonique sur disque, index dérivé SQLite/GRDB (sqlite-vec + FTS5 +
 graphe wikilinks), finder hybride vec/BM25/graphe, file-watch incrémental,
-outils `search_wiki` / `read_page` / `write_wiki_page`, lint, vue graphe + lecteur.
+outils `search_wiki` / `read_page` / `write_wiki_page` / `list_sources` /
+`read_source`, lint, vue graphe + lecteur.
 
 - [x] Ingestion de documents (sources `raw/`, markdown canonique `wiki/`).
-- [x] Embeddings locaux (bge-m3 via **MLX**, on-device).
+- [x] Embeddings locaux (bge-m3 via **MLX**, on-device ; ou Ollama local).
 - [x] Index vectoriel local + récupération (sqlite-vec + FTS5 + expansion graphe).
 - [x] Réponses du chat enrichies par le contexte récupéré, **avec citation
       des sources** (heading path).
 - [x] Soin particulier sur le français.
+
+**Au-delà du plan initial — couche curation/ingestion** (détail : PLAN_TYKAOZ_WIKI.md,
+« Couche curation ») : import de sources hétérogènes (PDF avec OCR Vision, images
+OCR, markdown/texte, pages web — originaux conservés), export d'une conversation
+vers le wiki puis distillation par le LLM (menu « Wikifier »), catalogue `index.md`
+et journal `log.md` auto-générés, conventions `AGENTS.md`, mode auto-curation
+opt-in, lint sémantique piloté par le LLM, suppression de page + reset, et store
+**versionné git** (commits à chaque écriture).
 
 **Critères de succès (produit, pas seulement technique) :**
 - [x] Déposer des docs, poser une question → réponse *avec sources* (technique OK).

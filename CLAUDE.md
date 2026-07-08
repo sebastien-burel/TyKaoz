@@ -52,16 +52,18 @@ clarifying questions come *before* implementation rather than after mistakes.
 
 ## What TyKaoz is
 
-A native macOS chat client for LLMs. **First milestone: chat against a remote
-Ollama server.** The architecture must stay open to additional backends —
-Apple Intelligence, local MLX (with model download), OpenAI, Anthropic Claude,
-Mistral — added *later, one at a time*. Beyond chat, the roadmap includes a
-RAG/graph layer over conversations, external tools, and agents.
+A native macOS chat client for LLMs. **The chat foundation is delivered:**
+11 chat backends (Ollama, Mistral, OpenAI, Anthropic Claude, Google Gemini,
+DeepSeek, Qwen, z.ai, a generic OpenAI-compatible endpoint, Apple Intelligence
+on-device, and local MLX with model download), plus a local ComfyUI text→image
+provider — each added *one at a time* behind a shared `LLMProvider` protocol.
+The product focus is now the **RAG/wiki layer** over conversations (delivered in
+code, cf. PLAN_TYKAOZ_WIKI.md); external tools and agents complete the roadmap.
 
 **This is the strategic bet, stated honestly:** plain local chat is a crowded,
-free space (Ollama, LM Studio, Jan). TyKaoz's eventual differentiation is the
-RAG/tools/agents layer on top — likely private local RAG in French with sources.
-The chat milestone is the *foundation*, not the sellable product. Build it clean
+free space (Ollama, LM Studio, Jan). TyKaoz's differentiation is the
+RAG/tools/agents layer on top — private local RAG in French with sources.
+The chat milestone is the *foundation*, not the sellable product. Keep it clean
 and extensible toward RAG, without over-engineering.
 
 ---
@@ -88,7 +90,8 @@ and extensible toward RAG, without over-engineering.
   iPadOS 26 sont des cibles **planifiées plus tard** (multi-plateforme différé) —
   on garde le code SwiftUI portable mais on ne crée pas les targets iOS/iPadOS
   tant que le besoin produit ne l'exige pas. Apple Intelligence (Foundation
-  Models framework) sera un provider intégré en Phase 5+ (cf. PLAN_TYKAOZ.md).
+  Models framework) et MLX local sont désormais des providers intégrés
+  (cf. PLAN_TYKAOZ.md).
 - **Async:** Swift Concurrency (`async`/`await`, `AsyncStream` for tokens).
   No Combine unless there's a concrete reason.
 - **No external dependencies** without explicit approval. Prefer the stdlib /

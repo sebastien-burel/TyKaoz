@@ -20,29 +20,44 @@ multi-provider est le socle, pas le produit fini.
 ## État
 
 Socle livré (chat multi-provider, persistance, function calling, plugins).
-La couche documentaire (wiki + embeddings locaux, RAG) est en cours.
-Le détail des paliers est dans [`PLAN_TYKAOZ.md`](PLAN_TYKAOZ.md) et
-[`PLAN_TYKAOZ_WIKI.md`](PLAN_TYKAOZ_WIKI.md).
+La couche documentaire (wiki + embeddings locaux, RAG) est livrée côté code —
+il reste à la confronter au marché. Le détail des paliers est dans
+[`PLAN_TYKAOZ.md`](PLAN_TYKAOZ.md) et [`PLAN_TYKAOZ_WIKI.md`](PLAN_TYKAOZ_WIKI.md).
 
 ## Fonctionnalités
 
 - **Chat en streaming** multi-tours, l'historique est renvoyé en contexte.
-- **Providers** : Ollama (distant), Mistral, OpenAI, Anthropic, Google Gemini,
-  DeepSeek, Qwen (DashScope), z.ai (GLM), un endpoint OpenAI-compatible
-  générique, Apple Intelligence (Foundation Models, on-device) et MLX local
-  (poids téléchargés). Un client OpenAI-compatible partagé sert les backends
-  qui suivent ce format ; Anthropic, Google et Apple ont leur client dédié.
+- **Providers de chat** (11) : Ollama (distant), Mistral, OpenAI, Anthropic,
+  Google Gemini, DeepSeek, Qwen (DashScope), z.ai (GLM), un endpoint
+  OpenAI-compatible générique, Apple Intelligence (Foundation Models,
+  on-device) et MLX local (poids téléchargés). Un client OpenAI-compatible
+  partagé sert les backends qui suivent ce format ; Anthropic, Google et Apple
+  ont leur client dédié.
+- **Vision & images** : entrée d'images (glisser-déposer, coller, joindre) vers
+  les modèles VLM (MLX local et cloud) ; génération et édition d'images côté
+  Gemini, OpenAI, Qwen, z.ai ; volet « Réflexion » repliable pour le raisonnement.
+- **Génération d'images en local** via **ComfyUI** : provider texte→image branché
+  sur un serveur ComfyUI ; chaque « modèle » est un workflow (JSON API) collé
+  dans les réglages, avec paramètres et graine réglables.
+- **Rendu des maths** : les notations LaTeX inline (`$…$`, `\(…\)`) sont
+  converties en Unicode à l'affichage (le message stocké garde la source brute).
 - **Persistance locale** des conversations (JSON sur disque, aucun cloud) :
-  création, renommage, suppression.
+  création, renommage, suppression, brouillons par conversation.
 - **Outils (function calling)** sur tous les providers : `current_datetime`,
   `current_location`, `fetch_url`, `web_search` (Brave), `list_directory`,
   `read_file`, `grep_files`, mémoire long terme (`save`/`list`/`read_memory`),
-  et les outils du wiki documentaire.
+  et les outils du wiki documentaire (`search_wiki`, `read_page`,
+  `write_wiki_page`, `list_sources`, `read_source`).
+- **Wiki / RAG on-device** : import de sources (PDF avec OCR, images OCR,
+  markdown/texte, pages web) dans le wiki, distillation en pages markdown reliées
+  par `[[wikilinks]]`, embeddings locaux (bge-m3 via MLX), récupération hybride
+  vecteur/BM25/graphe avec citation des sources. Navigateur wiki (pages, graphe,
+  audit/lint) et lecteur avec navigation par wikilinks. Export d'une conversation
+  vers le wiki (« Wikifier »). Détail dans [`PLAN_TYKAOZ_WIKI.md`](PLAN_TYKAOZ_WIKI.md).
 - **File spaces** : dossiers explicitement autorisés (bookmarks app-scope)
   qui bornent les outils fichiers, compatibles sandbox.
 - **Plugins HTTP** : un manifeste JSON déposé dans l'app expose un outil au
   modèle. Templating d'URL/headers, secrets stockés dans le trousseau.
-  Exemples fournis dans [`plugins/`](plugins/).
 - **Clés API** stockées dans le trousseau macOS (`net.haruni.TyKaoz`).
 
 ## Prérequis
