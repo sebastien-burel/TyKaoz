@@ -35,11 +35,16 @@ struct LintReport: Hashable {
 /// pipeline — out of scope for this struct.
 enum Lint {
     static func run(_ db: Database) throws -> LintReport {
+        // Links coming *from* the generated index.md would make every page
+        // reachable and blind the orphan check — ignore them, and don't
+        // report the app-managed pages themselves as orphans.
         let orphans = try Row.fetchAll(db, sql: """
             SELECT p.id, p.title
             FROM pages p
             LEFT JOIN edges e ON e.dst_page_id = p.id
+                             AND e.src_page_id NOT IN ('index', 'log', 'agents')
             WHERE e.dst_page_id IS NULL
+              AND p.id NOT IN ('index', 'log', 'agents')
             ORDER BY p.title;
         """).map {
             LintReport.Orphan(pageID: $0["id"], title: $0["title"])

@@ -53,6 +53,82 @@ struct OpenAICompatibleStreamingTests {
         }
     }
 
+    // MARK: - Usage / metrics
+
+    @Test
+    func parsesUsageOnlyChunk() throws {
+        // The trailing include_usage chunk: empty choices, just token counts.
+        let line = Data(#"data: {"choices":[],"usage":{"prompt_tokens":56,"completion_tokens":230,"total_tokens":286}}"#.utf8)
+        let info = try OpenAICompatibleClient.parseLine(line)
+        #expect(info.textDelta == nil)
+        #expect(info.done == false)
+        #expect(info.usage?.promptTokens == 56)
+        #expect(info.usage?.completionTokens == 230)
+    }
+
+    @Test
+    func parsesUsageInlinedOnFinalChunk() throws {
+        // Some servers (vLLM) inline usage on the finish_reason chunk.
+        let line = Data(#"data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":4}}"#.utf8)
+        let info = try OpenAICompatibleClient.parseLine(line)
+        #expect(info.done == true)
+        #expect(info.usage?.promptTokens == 10)
+        #expect(info.usage?.completionTokens == 4)
+    }
+
+    @Test
+    func toleratesChoiceWithoutDelta() throws {
+        // Qwen reasoning models emit choices with no `delta` on some chunks.
+        let line = Data(#"data: {"choices":[{"finish_reason":"stop"}]}"#.utf8)
+        let info = try OpenAICompatibleClient.parseLine(line)
+        #expect(info.textDelta == nil)
+        #expect(info.done == true)
+    }
+
+    @Test
+    func toleratesChunkWithoutChoicesKey() throws {
+        // A metadata / usage-only chunk with no `choices` key at all.
+        let line = Data(#"data: {"usage":{"prompt_tokens":3,"completion_tokens":9}}"#.utf8)
+        let info = try OpenAICompatibleClient.parseLine(line)
+        #expect(info.textDelta == nil)
+        #expect(info.usage?.completionTokens == 9)
+    }
+
+    @Test
+    func contentChunkCarriesNoUsage() throws {
+        let line = Data(#"data: {"choices":[{"delta":{"content":"Bonjour"},"finish_reason":null}]}"#.utf8)
+        #expect(try OpenAICompatibleClient.parseLine(line).usage == nil)
+    }
+
+    @Test
+    func bodyRequestsUsageInStream() throws {
+        let body = try OpenAICompatibleClient.buildBody(
+            model: "test",
+            messages: [ChatMessage(role: .user, content: "Heure ?")],
+            tools: []
+        )
+        let parsed = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        let options = parsed?["stream_options"] as? [String: Any]
+        #expect(options?["include_usage"] as? Bool == true)
+    }
+
+    @Test
+    func tokensPerSecondDerivesFromCountAndWindow() {
+        var m = GenerationMetrics()
+        m.completionTokens = 100
+        m.generationDuration = 2.0
+        #expect(m.tokensPerSecond == 50.0)
+    }
+
+    @Test
+    func tokensPerSecondNilWithoutWindow() {
+        var m = GenerationMetrics()
+        m.completionTokens = 100
+        #expect(m.tokensPerSecond == nil)   // no duration
+        m.generationDuration = 0
+        #expect(m.tokensPerSecond == nil)   // zero window, avoid divide-by-zero
+    }
+
     // MARK: - Tool call deltas
 
     @Test

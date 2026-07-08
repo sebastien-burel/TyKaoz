@@ -5,6 +5,9 @@ struct ParsedPage: Hashable {
     let id: String
     let title: String
     let type: String?
+    /// One-line description for the index catalog: frontmatter `summary:`
+    /// when present, else the first body line of prose.
+    let summary: String?
     let sources: [String]
     let createdAt: Date?
     let updatedAt: Date?
@@ -57,6 +60,7 @@ enum MarkdownParser {
             id: fallbackID,
             title: fields["title"]?.first ?? fallbackTitle,
             type: fields["type"]?.first.flatMap { $0.isEmpty ? nil : $0 },
+            summary: deriveSummary(fields: fields, body: body),
             sources: fields["sources"] ?? [],
             createdAt: fields["created"]?.first.flatMap(parseDate),
             updatedAt: fields["updated"]?.first.flatMap(parseDate),
@@ -65,6 +69,21 @@ enum MarkdownParser {
             wikilinks: extractWikilinks(in: body),
             contentHash: HashStore.sha256(content)
         )
+    }
+
+    /// One-line summary for the index catalog: frontmatter `summary:` wins;
+    /// otherwise the first non-empty, non-heading body line, capped at
+    /// 200 characters.
+    static func deriveSummary(fields: [String: [String]], body: String) -> String? {
+        if let explicit = fields["summary"]?.first, !explicit.isEmpty {
+            return String(explicit.prefix(200))
+        }
+        for line in body.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+            return String(trimmed.prefix(200))
+        }
+        return nil
     }
 
     // MARK: - Frontmatter

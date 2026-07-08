@@ -24,13 +24,14 @@ struct MemorySettingsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Mémoire")
+            Text("Préférences épinglées")
                 .font(Brand.Fonts.title(20))
                 .foregroundStyle(Brand.Colors.ink)
             Text("""
-            Ce dont l'assistant se souvient d'une conversation à l'autre. Ces \
-            notes sont ajoutées au contexte des nouveaux messages. Vous pouvez \
-            en supprimer à tout moment.
+            Petits faits stables sur vous — prénom, langue, style de réponse \
+            préféré — toujours ajoutés au contexte des nouveaux messages. Les \
+            connaissances (sujets, personnes, projets) vont dans le Wiki. Vous \
+            pouvez en supprimer à tout moment.
             """)
                 .font(Brand.Fonts.body(12))
                 .foregroundStyle(.secondary)

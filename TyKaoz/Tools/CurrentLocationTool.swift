@@ -65,6 +65,12 @@ struct CurrentLocationTool: Tool {
         if location.horizontalAccuracy >= 0 {
             lines.append("Précision : ±\(Int(location.horizontalAccuracy.rounded())) m")
         }
+        // A stale fix (the provider's last-known-position fallback) is
+        // flagged so the model can qualify its answer.
+        let age = -location.timestamp.timeIntervalSinceNow
+        if age > Self.staleFixAge {
+            lines.append("Attention : fix obtenu il y a \(Int(age / 60)) min — position possiblement ancienne.")
+        }
 
         if args.includeAddress ?? true,
            let address = try? await reverseGeocode(location) {
@@ -72,6 +78,9 @@ struct CurrentLocationTool: Tool {
         }
         return lines.joined(separator: "\n")
     }
+
+    /// Beyond this, the fix is old enough to caveat (fallback path).
+    static let staleFixAge: TimeInterval = 300
 
     private func formatted(_ degrees: CLLocationDegrees) -> String {
         String(format: "%.5f", degrees)

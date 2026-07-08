@@ -218,11 +218,23 @@ struct OpenAICompatibleClient {
                         accumulators.removeAll()
                     }
 
+                    // Client-side timing for the benchmark metrics. The
+                    // server reports token counts but no durations, so we
+                    // clock first/last token off the byte stream ourselves.
+                    let clock = ContinuousClock()
+                    let requestStart = clock.now
+                    var firstToken: ContinuousClock.Instant?
+                    var lastToken: ContinuousClock.Instant?
+
                     func absorb(_ info: LineInfo) {
                         if let delta = info.textDelta {
+                            if firstToken == nil { firstToken = clock.now }
+                            lastToken = clock.now
                             continuation.yield(.textDelta(delta))
                         }
                         if let reasoning = info.reasoningDelta {
+                            if firstToken == nil { firstToken = clock.now }
+                            lastToken = clock.now
                             continuation.yield(.reasoningDelta(reasoning))
                         }
                         for tcDelta in info.toolCallDeltas {
@@ -242,17 +254,26 @@ struct OpenAICompatibleClient {
                         }
                     }
 
+                    // `usage` arrives in a trailing chunk *after* finish_reason
+                    // (and before [DONE]). So we don't bail on the first `done`
+                    // — we flush tool calls, then keep draining for the usage
+                    // chunk, and break on the second `done` ([DONE]) or EOF.
+                    var usage: LineInfo.Usage?
+                    var sawDone = false
                     var buffer = Data()
                     for try await byte in bytes {
                         if Task.isCancelled { break }
                         if byte == 0x0A {
                             let info = try Self.parseLine(buffer)
                             buffer.removeAll(keepingCapacity: true)
-                            absorb(info)
+                            if let u = info.usage { usage = u }
                             if info.done {
+                                if sawDone { break }   // [DONE] after the usage chunk
+                                absorb(info)
                                 flushToolCalls()
-                                continuation.finish()
-                                return
+                                sawDone = true
+                            } else if !sawDone {
+                                absorb(info)
                             }
                         } else {
                             buffer.append(byte)
@@ -260,9 +281,23 @@ struct OpenAICompatibleClient {
                     }
                     if !buffer.isEmpty {
                         let info = try Self.parseLine(buffer)
-                        absorb(info)
+                        if let u = info.usage { usage = u }
+                        if !sawDone { absorb(info) }
                     }
-                    flushToolCalls()
+                    if !sawDone { flushToolCalls() }
+
+                    var metrics = GenerationMetrics()
+                    metrics.promptTokens = usage?.promptTokens
+                    metrics.completionTokens = usage?.completionTokens
+                    if let firstToken {
+                        metrics.timeToFirstToken = Self.seconds(requestStart.duration(to: firstToken))
+                        if let lastToken {
+                            metrics.generationDuration = Self.seconds(firstToken.duration(to: lastToken))
+                        }
+                    }
+                    if metrics != GenerationMetrics() {
+                        continuation.yield(.metrics(metrics))
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -281,12 +316,33 @@ struct OpenAICompatibleClient {
         let toolCallDeltas: [ToolCallDeltaInfo]
         let reasoningDelta: String?
         let done: Bool
+        /// Token counts if this chunk carried a `usage` block, else nil.
+        let usage: Usage?
+
+        struct Usage: Equatable {
+            let promptTokens: Int?
+            let completionTokens: Int?
+        }
 
         struct ToolCallDeltaInfo: Equatable {
             let index: Int?
             let id: String?
             let name: String?
             let argumentsDelta: String?
+        }
+
+        init(
+            textDelta: String?,
+            toolCallDeltas: [ToolCallDeltaInfo],
+            reasoningDelta: String?,
+            done: Bool,
+            usage: Usage? = nil
+        ) {
+            self.textDelta = textDelta
+            self.toolCallDeltas = toolCallDeltas
+            self.reasoningDelta = reasoningDelta
+            self.done = done
+            self.usage = usage
         }
     }
 
@@ -311,14 +367,19 @@ struct OpenAICompatibleClient {
 
         do {
             let chunk = try JSONDecoder().decode(OpenAICompatibleChunk.self, from: data)
-            guard let choice = chunk.choices.first else {
-                return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false)
+            let usage = chunk.usage.map {
+                LineInfo.Usage(promptTokens: $0.promptTokens, completionTokens: $0.completionTokens)
+            }
+            guard let choice = (chunk.choices ?? []).first else {
+                // Trailing usage-only chunk: no choices, just token counts.
+                return LineInfo(textDelta: nil, toolCallDeltas: [], reasoningDelta: nil, done: false, usage: usage)
             }
 
-            let textDelta = (choice.delta.content?.isEmpty ?? true) ? nil : choice.delta.content
-            let reasoningDelta = (choice.delta.reasoningContent?.isEmpty ?? true) ? nil : choice.delta.reasoningContent
+            let delta = choice.delta
+            let textDelta = (delta?.content?.isEmpty ?? true) ? nil : delta?.content
+            let reasoningDelta = (delta?.reasoningContent?.isEmpty ?? true) ? nil : delta?.reasoningContent
 
-            let tcDeltas = (choice.delta.toolCalls ?? []).map { tc in
+            let tcDeltas = (delta?.toolCalls ?? []).map { tc in
                 LineInfo.ToolCallDeltaInfo(
                     index: tc.index,
                     id: tc.id,
@@ -331,7 +392,8 @@ struct OpenAICompatibleClient {
                 textDelta: textDelta,
                 toolCallDeltas: tcDeltas,
                 reasoningDelta: reasoningDelta,
-                done: choice.finishReason != nil
+                done: choice.finishReason != nil,
+                usage: usage
             )
         } catch {
             throw OpenAICompatibleError.decoding(message: error.localizedDescription)
@@ -604,6 +666,12 @@ struct OpenAICompatibleClient {
     /// Builds the request body as a dictionary so we can splice each tool's
     /// raw JSON Schema in as a proper JSON object (Codable can't embed
     /// arbitrary JSON without gymnastics).
+    /// Converts a monotonic `Duration` to seconds as a Double.
+    static func seconds(_ d: Duration) -> Double {
+        let c = d.components
+        return Double(c.seconds) + Double(c.attoseconds) * 1e-18
+    }
+
     static func buildBody(
         model: String,
         messages: [ChatMessage],
@@ -612,6 +680,10 @@ struct OpenAICompatibleClient {
         var dict: [String: Any] = [
             "model": model,
             "stream": true,
+            // Ask the server to append a token-usage chunk before [DONE], so
+            // we can report prompt/completion counts. Standard OpenAI option,
+            // honoured by vLLM, NIM, LM Studio, llama.cpp and the cloud hosts.
+            "stream_options": ["include_usage": true],
             "messages": try messagesToDicts(messages)
         ]
         if !tools.isEmpty {

@@ -13,6 +13,13 @@ struct WikiPageReaderView: View {
 
     @State private var content: String = ""
     @State private var loadingError: String?
+    @State private var confirmingDelete = false
+
+    /// App-managed pages (index / log / agents) aren't user-deletable —
+    /// they'd just be regenerated.
+    private var isDeletable: Bool {
+        !IndexPageGenerator.reservedIDs.contains(pageRef.id)
+    }
 
     var body: some View {
         ScrollView {
@@ -32,22 +39,46 @@ struct WikiPageReaderView: View {
         .background(Brand.Colors.paper)
         .task(id: pageRef.id) { await load() }
         .task(id: wiki.indexRevision) { await load() }
+        .confirmationDialog(
+            "Supprimer « \(pageRef.title) » ?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Supprimer la page", role: .destructive) {
+                Task { await delete() }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Le fichier markdown est supprimé du wiki (et du dépôt git). Irréversible depuis l'app.")
+        }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(pageRef.title)
-                .font(Brand.Fonts.title(22))
-                .foregroundStyle(Brand.Colors.ink)
-            Text("id: \(pageRef.id)  ·  \(pageRef.path)")
-                .font(Brand.Fonts.mono(10))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(pageRef.title)
+                    .font(Brand.Fonts.title(22))
+                    .foregroundStyle(Brand.Colors.ink)
+                Text("id: \(pageRef.id)  ·  \(pageRef.path)")
+                    .font(Brand.Fonts.mono(10))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Spacer()
+            if isDeletable {
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    Label("Supprimer", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Supprimer cette page du wiki")
+            }
         }
     }
 
     private var bodyView: some View {
-        Markdown(Self.rewriteWikilinksAsMarkdownLinks(stripFrontmatter(content)))
+        Markdown(MathMarkup.render(Self.rewriteWikilinksAsMarkdownLinks(stripFrontmatter(content))))
             .markdownTextStyle {
                 FontFamily(.custom("Inter Tight"))
                 FontSize(14)
@@ -99,6 +130,19 @@ struct WikiPageReaderView: View {
     private func stripFrontmatter(_ text: String) -> String {
         let (_, body) = MarkdownParser.splitFrontmatter(text)
         return body
+    }
+
+    /// Deletes the page's markdown file, journals + commits the removal,
+    /// then reindexes (which prunes the page and refreshes index.md and the
+    /// browser list). Disk is canonical, so removing the file is the delete.
+    @MainActor
+    private func delete() async {
+        let url = context.wikiRoot.appendingPathComponent(pageRef.path)
+        try? FileManager.default.removeItem(at: url)
+        WikiLog.append(op: "delete", detail: "\(pageRef.title) (\(pageRef.path))", in: context.wikiRoot)
+        GitRunner.commit(message: "delete \(pageRef.path)", in: context.wikiRoot)
+        selection = nil
+        await wiki.reindexNow()
     }
 
     // MARK: - Wikilink navigation

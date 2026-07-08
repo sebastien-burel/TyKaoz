@@ -6,6 +6,7 @@ struct ChatView: View {
     @Environment(ConversationStore.self) private var store
     @Environment(AppSettings.self) private var settings
     @Environment(MemoryStore.self) private var memory
+    @Environment(WikiManager.self) private var wiki
 
     @Binding var conversation: Conversation?
     let provider: (any LLMProvider)?
@@ -21,6 +22,9 @@ struct ChatView: View {
     /// store. Cleared when switching conversations.
     @State private var pendingImages: [PendingImage] = []
     @State private var isImageImporterPresented = false
+    /// Drives keyboard focus on the message field so the user can type
+    /// straight away: on opening a conversation and once a reply finishes.
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,14 +38,96 @@ struct ChatView: View {
             }
         }
         .background(Brand.Colors.paper)
+        .toolbar {
+            if let ctx = wiki.state.context, conversation != nil {
+                ToolbarItem(placement: .automatic) {
+                    Menu {
+                        Button("Cette conversation") {
+                            wikifyConversation()
+                        }
+                        .disabled(conversation?.messages.isEmpty != false)
+
+                        let sources = SourceImporter.recentSourceIDs(in: ctx.rawRoot)
+                        if !sources.isEmpty {
+                            Divider()
+                            Section("Sources importées") {
+                                ForEach(sources, id: \.self) { id in
+                                    Button(id) { ingestSource(id, context: ctx) }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Wikifier", systemImage: "books.vertical")
+                    }
+                    .disabled(session.state == .streaming || provider == nil)
+                    .help("Intègre au wiki cette conversation ou une source importée")
+                }
+            }
+        }
         .onChange(of: session.state) { oldState, newState in
             if oldState == .streaming, newState == .idle {
                 autoRenameIfNeeded()
+                inputFocused = true   // hand focus back once the reply lands
             }
             if case .failed(let message) = newState {
                 pruneActiveModelIfDeprecated(reportedBy: message)
             }
         }
+        // Focus the field when a conversation opens or is switched to, and
+        // retro-title any conversation still on the default name (e.g. an
+        // older one whose first title attempt failed).
+        .onChange(of: conversation?.id) { _, id in
+            if id != nil { inputFocused = true }
+            autoRenameIfNeeded()
+        }
+        .onAppear {
+            if conversation != nil { inputFocused = true }
+            autoRenameIfNeeded()
+        }
+    }
+
+    /// Ingests an already-imported source (picked from the Wikifier menu):
+    /// journals, then runs the ingest prompt through the normal chat loop.
+    private func ingestSource(_ sourceID: String, context ctx: WikiContext) {
+        guard let provider, conversation != nil else { return }
+        WikiLog.append(op: "ingest", detail: sourceID, in: ctx.wikiRoot)
+        session.send(
+            text: WikiIngestPrompt.build(sourceID: sourceID),
+            in: Binding(
+                get: { conversation! },
+                set: { conversation = $0 }
+            ),
+            using: provider,
+            tools: tools,
+            memoryContext: systemContext,
+            model: activeModelLabel,
+            store: store
+        )
+    }
+
+    /// Ingest flow: snapshot the transcript into `raw/` (before the ingest
+    /// turn is appended, so the mirror stays clean), journal + commit, then
+    /// run the ingest prompt through the normal chat loop — tool calls stay
+    /// visible and the user can interrupt.
+    private func wikifyConversation() {
+        guard let provider, let conv = conversation,
+              let ctx = wiki.state.context,
+              let sourceID = ConversationExporter.mirror(conv, into: ctx.rawRoot)
+        else { return }
+        WikiLog.append(op: "ingest", detail: "\(conv.title) → raw/\(sourceID).md", in: ctx.wikiRoot)
+        GitRunner.commit(message: "ingest: mirror \(sourceID)", in: ctx.wikiRoot)
+        session.send(
+            text: WikiIngestPrompt.build(sourceID: sourceID),
+            in: Binding(
+                get: { conversation! },
+                set: { conversation = $0 }
+            ),
+            using: provider,
+            tools: tools,
+            memoryContext: systemContext,
+            model: activeModelLabel,
+            store: store
+        )
     }
 
     /// Some providers list deprecated models in their catalog but 404 on
@@ -86,6 +172,7 @@ struct ChatView: View {
     /// re-entry.
     private func autoRenameIfNeeded() {
         guard let conv = conversation, let provider,
+              session.state != .streaming,
               conv.title == ConversationTitler.defaultTitle,
               conv.messages.count >= 2
         else { return }
@@ -154,6 +241,7 @@ struct ChatView: View {
                     .foregroundStyle(Brand.Colors.ink)
                     .lineLimit(1...6)
                     .disabled(!canType)
+                    .focused($inputFocused)
                     .onSubmit(send)
 
                 actionButton
@@ -297,6 +385,7 @@ struct ChatView: View {
             switch providerID {
             case "anthropic": return "Renseignez votre clé Anthropic et choisissez un modèle…"
             case "apple":     return "Apple Intelligence indisponible — voir les réglages."
+            case "comfyui":   return "Configurez l'URL de votre serveur ComfyUI et ajoutez un workflow…"
             case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
             case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
             case "localOpenAI": return "Configurez l'URL de votre serveur (vLLM, LM Studio, llama.cpp) et choisissez un modèle…"
@@ -351,11 +440,34 @@ struct ChatView: View {
             ),
             using: provider,
             tools: tools,
-            memoryContext: settings.isToolEnabled("read_memory") ? memory.promptContext : nil,
+            memoryContext: systemContext,
             attachments: attachments,
             model: activeModelLabel,
             store: store
         )
+    }
+
+    /// System context for the next send: long-term memory plus, when the
+    /// wiki is active, the wiki preamble (conventions + catalog +
+    /// behavioral instructions). Apple Intelligence is excluded — its 4k
+    /// window can't afford the preamble.
+    private var systemContext: String? {
+        var parts: [String] = []
+        if settings.isToolEnabled("read_memory"),
+           let memoryPart = memory.promptContext, !memoryPart.isEmpty {
+            parts.append(memoryPart)
+        }
+        if settings.wikiContextEnabled,
+           settings.isToolEnabled("search_wiki"),
+           providerID != "apple",
+           let ctx = wiki.state.context {
+            let wikiPart = WikiPromptContext.load(
+                wikiRoot: ctx.wikiRoot,
+                autoCuration: settings.wikiAutoCuration
+            )
+            if !wikiPart.isEmpty { parts.append(wikiPart) }
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 
     /// "Provider · model" label for the active model, stamped on the user
@@ -580,6 +692,9 @@ private struct MessageBubble: View {
                         .disabled(message.content.isEmpty)
                 }
             }
+            if message.role == .assistant, let metrics = message.metrics {
+                MetricsFooter(metrics: metrics)
+            }
             }
             if message.role == .assistant { Spacer(minLength: 40) }
         }
@@ -704,7 +819,12 @@ private struct MessageBubble: View {
     }
 
     private var displayText: String {
-        message.content
+        // Assistant text may carry LaTeX math the markdown engine can't
+        // render; convert it to Unicode at display time (stored content
+        // stays raw). User messages are shown verbatim.
+        message.role == .assistant
+            ? MathMarkup.render(message.content)
+            : message.content
     }
 
     private var background: some ShapeStyle {
@@ -824,6 +944,48 @@ private struct StreamingIndicator: View {
             }
             .padding(.vertical, 2)
         }
+    }
+}
+
+/// Compact performance line under an assistant answer: decode throughput,
+/// token counts and time-to-first-token. Only fields the backend actually
+/// reported are shown — aimed at benchmarking local servers (vLLM, NIM…)
+/// where tok/s is the headline number.
+private struct MetricsFooter: View {
+    let metrics: GenerationMetrics
+
+    var body: some View {
+        let parts = segments
+        if !parts.isEmpty {
+            Text(parts.joined(separator: "  ·  "))
+                .font(Brand.Fonts.mono(11))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.horizontal, 4)
+                .padding(.top, 2)
+        }
+    }
+
+    private var segments: [String] {
+        var s: [String] = []
+        if let tps = metrics.tokensPerSecond {
+            s.append(String(format: "%.1f tok/s", tps))
+        }
+        if let out = metrics.completionTokens {
+            s.append("\(out) tok")
+        }
+        if let prompt = metrics.promptTokens {
+            s.append("\(prompt) prompt")
+        }
+        if let pps = metrics.promptTokensPerSecond {
+            s.append(String(format: "%.0f tok/s prefill", pps))
+        }
+        if let ttft = metrics.timeToFirstToken {
+            s.append(ttft >= 1
+                ? String(format: "TTFT %.2f s", ttft)
+                : String(format: "TTFT %.0f ms", ttft * 1000))
+        }
+        return s
     }
 }
 

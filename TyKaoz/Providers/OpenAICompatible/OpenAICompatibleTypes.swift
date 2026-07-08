@@ -32,7 +32,10 @@ struct OpenAICompatibleChunk: Decodable {
             let arguments: String?
         }
 
-        let delta: Delta
+        /// Optional: some providers (e.g. Qwen reasoning models) emit
+        /// choices with no `delta` on certain chunks. A missing delta must
+        /// not abort the whole stream.
+        let delta: Delta?
         let finishReason: String?
 
         enum CodingKeys: String, CodingKey {
@@ -40,7 +43,26 @@ struct OpenAICompatibleChunk: Decodable {
             case finishReason = "finish_reason"
         }
     }
-    let choices: [Choice]
+
+    /// Token accounting. Present only when the request opts in via
+    /// `stream_options.include_usage`; it then arrives in a trailing chunk
+    /// (with `choices` empty) just before `[DONE]`. Some servers also inline
+    /// it on the final content chunk.
+    struct Usage: Decodable {
+        let promptTokens: Int?
+        let completionTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case promptTokens = "prompt_tokens"
+            case completionTokens = "completion_tokens"
+        }
+    }
+
+    /// Optional: a trailing usage-only chunk, or an occasional metadata
+    /// chunk, can arrive without any `choices` key. Decode it as empty
+    /// rather than throwing.
+    let choices: [Choice]?
+    let usage: Usage?
 }
 
 struct OpenAICompatibleModelsResponse: Decodable {

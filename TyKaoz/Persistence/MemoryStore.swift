@@ -1,9 +1,11 @@
 import Foundation
 import Observation
 
-/// Owns the assistant's long-term memories. Persisted as a single JSON file so
-/// they survive relaunches; surfaced both to the memory tools (read/write) and
-/// to the chat as an injected system prompt.
+/// Owns the assistant's pinned preferences about the user — small, stable
+/// facts (name, language, answer style) always injected into context.
+/// Distinct from the wiki, which holds structured knowledge and is retrieved
+/// on demand. Persisted as a single JSON file; surfaced to the memory tools
+/// and injected into the chat system prompt.
 @Observable
 @MainActor
 final class MemoryStore {
@@ -15,6 +17,12 @@ final class MemoryStore {
     /// the conversation; older memories beyond this many are dropped from the
     /// injected context (but still readable via the tools).
     private static let maxInjected = 50
+
+    /// Character ceiling on the injected block. Memory is the small,
+    /// always-on "pinned preferences" layer — the wiki owns bulk knowledge —
+    /// so the block stays tiny. Newest pins win; oldest are dropped from the
+    /// injection (still on disk / via the tools) once the budget is hit.
+    private static let maxInjectedChars = 800
 
     init(fileURL: URL = MemoryStore.defaultFileURL) {
         self.fileURL = fileURL
@@ -51,16 +59,26 @@ final class MemoryStore {
     }
 
     /// The system-prompt block injected into new turns, or nil when empty.
+    /// This is the "pinned preferences" layer (name, language, answer style),
+    /// distinct from the wiki's knowledge base — kept small and always on.
+    /// Newest entries are kept first, and lines are dropped once the
+    /// character budget is reached.
     var promptContext: String? {
         guard !memories.isEmpty else { return nil }
-        let lines = memories
-            .suffix(Self.maxInjected)
-            .map { "- \($0.title) : \($0.content)" }
-            .joined(separator: "\n")
+        var lines: [String] = []
+        var used = 0
+        // Newest first: the freshest pins survive the budget.
+        for memory in memories.suffix(Self.maxInjected).reversed() {
+            let line = "- \(memory.title) : \(memory.content)"
+            if used + line.count > Self.maxInjectedChars, !lines.isEmpty { break }
+            lines.append(line)
+            used += line.count + 1
+        }
+        guard !lines.isEmpty else { return nil }
         return """
-        Mémoire à long terme sur l'utilisateur et les tâches en cours. \
-        Tiens-en compte sans la répéter mot à mot :
-        \(lines)
+        Préférences et faits épinglés sur l'utilisateur (nom, langue, style de \
+        réponse). Tiens-en compte sans les répéter mot à mot :
+        \(lines.reversed().joined(separator: "\n"))
         """
     }
 

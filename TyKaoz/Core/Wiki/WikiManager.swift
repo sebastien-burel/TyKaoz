@@ -78,7 +78,24 @@ final class WikiManager {
             appropriateFor: nil,
             create: true
         )) ?? fm.temporaryDirectory
-        return appSupport.appendingPathComponent("wiki-store", isDirectory: true)
+        // All app data lives under TyKaoz/ (conversations, memories,
+        // plugins…); the wiki joins it there instead of sitting beside it.
+        let root = appSupport.appendingPathComponent("TyKaoz/wiki-store", isDirectory: true)
+        migrateLegacyStoreIfNeeded(to: root, appSupport: appSupport)
+        return root
+    }
+
+    /// One-time move of the old top-level `wiki-store/` into `TyKaoz/`.
+    /// No-op once migrated (runs before the DB is opened, so moving the
+    /// whole directory — index.sqlite + wal/shm together — is safe).
+    private static func migrateLegacyStoreIfNeeded(to newRoot: URL, appSupport: URL) {
+        let fm = FileManager.default
+        let legacy = appSupport.appendingPathComponent("wiki-store", isDirectory: true)
+        guard fm.fileExists(atPath: legacy.path), !fm.fileExists(atPath: newRoot.path) else { return }
+        try? fm.createDirectory(
+            at: newRoot.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try? fm.moveItem(at: legacy, to: newRoot)
     }
 
     /// Builds (or rebuilds) the context based on the current settings.
@@ -127,6 +144,7 @@ final class WikiManager {
             )
             let ctx = WikiContext(storeRoot: storeRoot, pool: pool, embedder: embedder)
             try ctx.bootstrapDirectoriesIfNeeded()
+            try ctx.bootstrapSchemaFileIfNeeded()
 
             let fw = WikiFileWatcher(context: ctx)
             fw.onIndexed = { [weak self] in
@@ -230,7 +248,7 @@ final class WikiManager {
     /// Force a full reindex. UI uses this for "Indexer maintenant".
     func reindexNow() async {
         guard let ctx = state.context else { return }
-        _ = try? await ctx.makeIndexer().reindexAll()
+        _ = try? await ctx.reindexAll()
         indexRevision &+= 1
     }
 
@@ -263,6 +281,41 @@ final class WikiManager {
         reconcile(settings: settings)
         await reindexNow()
         indexRevision &+= 1
+    }
+
+    /// Full content reset: deletes every wiki page and the journal
+    /// (`log.md`), then rebuilds the now-empty index (which also
+    /// regenerates an empty `index.md`). **Kept**: the imported sources
+    /// under `raw/` (the user's inputs) and the conventions `AGENTS.md`.
+    /// Destructive — the UI confirms first. The deletion is git-committed,
+    /// so it stays recoverable via `git` in the store.
+    func resetWiki(settings: AppSettings) async {
+        let wikiRoot = Self.defaultStoreRoot().appendingPathComponent("wiki", isDirectory: true)
+        let fm = FileManager.default
+        // Pages can live in subfolders (concepts/, family/…), so recurse.
+        let keep = wikiRoot.appendingPathComponent("AGENTS.md").standardizedFileURL.path
+        if let enumerator = fm.enumerator(
+            at: wikiRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        ) {
+            for case let url as URL in enumerator
+            where url.pathExtension.lowercased() == "md"
+                && url.standardizedFileURL.path != keep {
+                try? fm.removeItem(at: url)
+            }
+        }
+        // Drop the now-empty subfolders so the tree stays clean.
+        if let entries = try? fm.contentsOfDirectory(
+            at: wikiRoot, includingPropertiesForKeys: [.isDirectoryKey]
+        ) {
+            for url in entries {
+                guard (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true,
+                      let sub = try? fm.contentsOfDirectory(atPath: url.path), sub.isEmpty
+                else { continue }
+                try? fm.removeItem(at: url)
+            }
+        }
+        GitRunner.commit(message: "reset wiki", in: wikiRoot)
+        await rebuildIndex(settings: settings)
     }
 
     private func tearDown() {

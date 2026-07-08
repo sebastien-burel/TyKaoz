@@ -13,8 +13,10 @@ final class ChatSession {
 
     /// Defensive cap: a tool-using model occasionally goes in circles. After
     /// this many provider → tool → provider iterations we bail and let the
-    /// user inspect what happened.
-    static let maxToolRounds = 10
+    /// user inspect what happened. Sized for wiki curation, where a single
+    /// ingest legitimately reads a source then writes several pages — each
+    /// its own round — so a low cap would truncate honest work.
+    static let maxToolRounds = 20
 
     private(set) var state: State = .idle
 
@@ -169,6 +171,10 @@ final class ChatSession {
                             atts.append(attachment)
                             conversation.wrappedValue.messages[idx].attachments = atts
                         }
+                    }
+                case .metrics(let metrics):
+                    if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
+                        conversation.wrappedValue.messages[idx].metrics = metrics
                     }
                 case .toolCall(let id, let name, let argumentsJSON, let signature):
                     pendingCalls.append((id, name, argumentsJSON, signature))

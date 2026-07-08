@@ -51,11 +51,27 @@ enum ConversationTitler {
                 }
             }
         } catch {
-            return nil
+            // Stream error (or a reasoning model that never emitted content):
+            // still give the conversation a usable title.
+            return fallback(from: userMessage.content)
         }
 
         let cleaned = clean(collected)
-        return cleaned.isEmpty ? nil : cleaned
+        // Reasoning models sometimes answer entirely in their thinking
+        // channel and leave the content empty — fall back rather than
+        // leaving "Nouvelle conversation".
+        return cleaned.isEmpty ? fallback(from: userMessage.content) : cleaned
+    }
+
+    /// Deterministic title from the first user message when the LLM can't
+    /// (or won't) produce one. Flattened, trimmed, capped.
+    static func fallback(from userContent: String) -> String {
+        let flat = userContent
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !flat.isEmpty else { return defaultTitle }
+        guard flat.count > 40 else { return flat }
+        return String(flat.prefix(40)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     /// Strips quotes, surrounding whitespace, trailing punctuation, and caps

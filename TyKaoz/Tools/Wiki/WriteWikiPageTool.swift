@@ -38,6 +38,12 @@ struct WriteWikiPageTool: Tool {
         stamps the frontmatter `created` / `updated` dates, writes the
         file, auto-commits via git, and re-indexes so search_wiki sees
         the change immediately.
+
+        Follow the conventions in the page with id "agents" (types,
+        no duplicates, at least one [[link]], sources in frontmatter).
+        index.md and log.md are app-managed — never write them.
+        This is for knowledge (topics, people, projects); a small personal
+        preference (name, language, tone) goes in save_memory instead.
         """,
         inputSchemaJSON: """
         {
@@ -74,6 +80,16 @@ struct WriteWikiPageTool: Tool {
         // 1. Validate path: must be under wiki/, must be .md, no escape.
         guard args.path.hasSuffix(".md"), !args.path.contains(".."), !args.path.hasPrefix("/") else {
             throw ToolError.execution(message: "Chemin invalide. Attendu : relatif sous wiki/, terminé en .md.")
+        }
+        // App-managed files: index.md is regenerated after every reindex
+        // and log.md is the append-only journal — a model write would be
+        // overwritten or corrupt the history.
+        let reserved = ["index.md", "log.md"]
+        guard !reserved.contains(args.path.lowercased()) else {
+            throw ToolError.execution(message: """
+                \(args.path) est géré par l'application (catalogue/journal). \
+                Écris tes contenus dans d'autres pages.
+                """)
         }
 
         // 2. Resolve the real target. A page's title is its identity: if
@@ -121,17 +137,20 @@ struct WriteWikiPageTool: Tool {
         )
         try normalised.write(to: fullURL, atomically: true, encoding: .utf8)
 
-        // 7. Audit log via git. Best-effort.
+        // 7. Journal, then sync re-index (+ index.md refresh) so
+        //    search_wiki sees the new content immediately.
+        let title = MarkdownParser.parse(normalised, path: targetPath).title
+        WikiLog.append(op: "write", detail: "\(title) (\(targetPath))", in: context.wikiRoot)
+        try await context.reindexAll()
+
+        // 8. Audit log via git. Best-effort. Stage-all (no relativePath)
+        //    so the page, log.md and the regenerated index.md land in one
+        //    commit.
         let slug = targetPath.replacingOccurrences(of: "/", with: "-")
         let committed = GitRunner.commit(
             message: "agent: write \(slug)",
-            in: context.wikiRoot,
-            relativePath: targetPath
+            in: context.wikiRoot
         )
-
-        // 8. Sync re-index so search_wiki sees the new content.
-        // Phase 2's file-watch will take this over.
-        _ = try await context.makeIndexer().reindexAll()
 
         let gitLine = committed ? "git: commit créé" : "git: indisponible, écriture quand même"
         let retargetNote = existing.map {

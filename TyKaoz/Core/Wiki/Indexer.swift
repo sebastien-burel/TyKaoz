@@ -156,17 +156,30 @@ struct Indexer {
         try db.execute(sql: """
             INSERT INTO pages (id, path, title, type, summary,
                                content_hash, created_at, updated_at)
-            VALUES (?, ?, ?, ?, NULL, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 path = excluded.path,
                 title = excluded.title,
                 type = excluded.type,
+                summary = excluded.summary,
                 content_hash = excluded.content_hash,
                 updated_at = excluded.updated_at;
         """, arguments: [
-            page.id, relativePath, page.title, page.type,
+            page.id, relativePath, page.title, page.type, page.summary,
             page.contentHash, now, now
         ])
+
+        // Provenance: frontmatter `sources:` → page_sources. Only rows
+        // whose source actually exists in `sources` — the FK requires it;
+        // unknown ids simply wait until the source is registered.
+        try db.execute(sql: "DELETE FROM page_sources WHERE page_id = ?;",
+                       arguments: [page.id])
+        for sourceID in page.sources {
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO page_sources (page_id, source_id)
+                SELECT ?, id FROM sources WHERE id = ?;
+            """, arguments: [page.id, sourceID])
+        }
 
         try db.execute(sql: "DELETE FROM chunks WHERE page_id = ?;",
                        arguments: [page.id])

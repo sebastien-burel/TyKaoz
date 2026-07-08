@@ -31,6 +31,7 @@ struct SettingsPanelView: View {
         switch selection {
         case .provider(.anthropic): AnthropicSettingsView()
         case .provider(.apple):     AppleSettingsView()
+        case .provider(.comfyui):   ComfyUISettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
         case .provider(.google):    GoogleSettingsView()
         case .provider(.localOpenAI): LocalOpenAISettingsView()
@@ -64,7 +65,7 @@ enum SettingsSection: Hashable {
         case .provider(let id): return id.displayName
         case .tools:            return "Outils"
         case .fileSpaces:       return "Dossiers autorisés"
-        case .memory:           return "Mémoire"
+        case .memory:           return "Préférences"
         case .plugins:          return "Plugins"
         case .wiki:             return "Wiki"
         }
@@ -89,7 +90,7 @@ private struct ProvidersSidebar: View {
                 sectionLabel("Outils")
                 toolRow(title: "Outils", systemImage: "wrench.and.screwdriver", section: .tools)
                 toolRow(title: "Dossiers", systemImage: "folder", section: .fileSpaces)
-                toolRow(title: "Mémoire", systemImage: "brain", section: .memory)
+                toolRow(title: "Préférences", systemImage: "brain", section: .memory)
                 toolRow(title: "Plugins", systemImage: "puzzlepiece.extension", section: .plugins)
                 toolRow(title: "Wiki", systemImage: "books.vertical", section: .wiki)
             }
@@ -167,6 +168,9 @@ private struct ProvidersSidebar: View {
                 ? .green : .gray
         case .apple:
             return AppleIntelligenceProvider.isReady ? .green : .gray
+        case .comfyui:
+            return (settings.comfyuiBaseURL != nil && !settings.comfyuiWorkflows.isEmpty)
+                ? .green : .gray
         case .deepseek:
             return (!settings.deepseekAPIKey.isEmpty && settings.deepseekModel?.isEmpty == false)
                 ? .green : .gray
@@ -178,11 +182,15 @@ private struct ProvidersSidebar: View {
                 ? .green : .gray
         case .mlx:
             // Green once a chat model is on disk — no API key to check,
-            // availability is "a usable model is downloaded".
-            let hasChatModel = ModelCatalogService.shared.chats.contains {
+            // availability is "a usable model is downloaded" — counting
+            // hand-added custom slugs, not just the curated catalog.
+            let hasCurated = ModelCatalogService.shared.chats.contains {
                 MLXModelStore.shared.isInstalled(modelID: $0.id)
             }
-            return hasChatModel ? .green : .gray
+            let hasCustom = settings.mlxCustomChatModelIDs.contains {
+                MLXModelStore.shared.isInstalled(modelID: $0)
+            }
+            return (hasCurated || hasCustom) ? .green : .gray
         case .mistral:
             return (!settings.mistralAPIKey.isEmpty && settings.mistralModel?.isEmpty == false)
                 ? .green : .gray
@@ -207,6 +215,7 @@ private struct ProvidersSidebar: View {
 enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case anthropic
     case apple
+    case comfyui
     case deepseek
     case google
     case localOpenAI
@@ -223,6 +232,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         switch raw {
         case "anthropic":   self = .anthropic
         case "apple":       self = .apple
+        case "comfyui":     self = .comfyui
         case "deepseek":    self = .deepseek
         case "google":      self = .google
         case "localOpenAI": self = .localOpenAI
@@ -240,6 +250,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .anthropic:    return "Anthropic"
         case .apple:        return "Apple Intelligence"
+        case .comfyui:      return "ComfyUI"
         case .deepseek:     return "DeepSeek"
         case .google:       return "Google Gemini"
         case .localOpenAI:  return "Compatible OpenAI"

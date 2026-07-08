@@ -11,10 +11,11 @@ struct SaveMemoryTool: Tool {
     let spec = ToolSpec(
         name: "save_memory",
         description: """
-        Saves a durable note about the user or an ongoing task so it can be
-        recalled in future conversations. Use for stable facts and preferences
-        (name, language, recurring context) — not for one-off chatter. Provide
-        a short title and the content to remember.
+        Pins a small, stable preference about the user so it's always in
+        context: their name, preferred language, tone, how they like answers.
+        NOT for knowledge or facts about a topic, a person, or a project —
+        that goes in the wiki via write_wiki_page. Not for one-off chatter.
+        Provide a short title and the content to remember.
         """,
         inputSchemaJSON: """
         {

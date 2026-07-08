@@ -30,6 +30,22 @@ struct OllamaChatChunk: Decodable {
 
     let message: Message
     let done: Bool
+
+    /// Performance counters, present only on the final (`done:true`) chunk.
+    /// Durations are in nanoseconds. `evalCount`/`evalDuration` cover token
+    /// generation (decode); the prompt_* pair covers prompt processing.
+    let evalCount: Int?
+    let evalDuration: Int?
+    let promptEvalCount: Int?
+    let promptEvalDuration: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case message, done
+        case evalCount = "eval_count"
+        case evalDuration = "eval_duration"
+        case promptEvalCount = "prompt_eval_count"
+        case promptEvalDuration = "prompt_eval_duration"
+    }
 }
 
 /// Type-erased wrapper that lets us decode arbitrary JSON into a Swift value

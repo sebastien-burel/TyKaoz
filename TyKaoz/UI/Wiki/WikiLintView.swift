@@ -16,6 +16,7 @@ struct WikiLintView: View {
     @State private var report: LintReport?
     @State private var loading = false
     @State private var error: String?
+    @State private var auditPromptCopied = false
 
     var body: some View {
         ScrollView {
@@ -50,7 +51,30 @@ struct WikiLintView: View {
             Text("Vue déterministe : orphelins, liens pendouillants, concepts manquants.")
                 .font(Brand.Fonts.body(11))
                 .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Button("Audit LLM…") { copyAuditPrompt() }
+                    .disabled(report == nil)
+                if auditPromptCopied {
+                    Label("Prompt copié — colle-le dans une conversation.", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(Brand.Fonts.body(11))
+                }
+            }
+            .padding(.top, 6)
         }
+    }
+
+    /// Semantic half of the lint: builds a prompt embedding the SQL
+    /// findings and copies it to the clipboard. The user pastes it into
+    /// any conversation so fixes run through the visible chat loop —
+    /// nothing is auto-applied.
+    private func copyAuditPrompt() {
+        guard let report else { return }
+        let prompt = WikiLintPrompt.build(report: report)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(prompt, forType: .string)
+        WikiLog.append(op: "lint", detail: "audit LLM préparé", in: context.wikiRoot)
+        auditPromptCopied = true
     }
 
     // MARK: - Orphans
@@ -204,24 +228,10 @@ struct WikiLintView: View {
         }
     }
 
-    /// Lowercase, French diacritic stripped, non-alphanum → hyphens.
-    /// Stable across platforms — no localized magic, just ASCII.
+    /// Delegates to the shared `Slug` (Core/Wiki) — kept as an alias so
+    /// existing call sites and tests stay valid.
     static func slugify(_ raw: String) -> String {
-        let folded = raw.folding(options: .diacriticInsensitive, locale: .init(identifier: "fr_FR"))
-        let lower = folded.lowercased()
-        var out = ""
-        var lastWasDash = false
-        for c in lower {
-            if c.isLetter || c.isNumber {
-                out.append(c)
-                lastWasDash = false
-            } else if !lastWasDash, !out.isEmpty {
-                out.append("-")
-                lastWasDash = true
-            }
-        }
-        if out.hasSuffix("-") { out.removeLast() }
-        return out.isEmpty ? "page-\(UUID().uuidString.prefix(8))" : out
+        Slug.make(raw)
     }
 }
 

@@ -20,6 +20,39 @@ enum LocationError: Error, LocalizedError, Equatable {
     }
 }
 
+/// Diagnostic signals observed while waiting for a fix. When the wait times
+/// out, they turn a mute "no fix" into an actionable message. Pure value —
+/// the message builder is unit-tested without CoreLocation.
+struct LocationFixSignals: OptionSet, Sendable {
+    let rawValue: Int
+
+    /// The system reported it cannot determine the position — on a desktop
+    /// Mac this almost always means Wi-Fi is off (no GPS; positioning scans
+    /// nearby Wi-Fi networks).
+    static let locationUnavailable = LocationFixSignals(rawValue: 1 << 0)
+    /// The authorization prompt is still on screen.
+    static let authorizationRequestInProgress = LocationFixSignals(rawValue: 1 << 1)
+    /// The system considers the app not "in use" enough to serve it.
+    static let insufficientlyInUse = LocationFixSignals(rawValue: 1 << 2)
+
+    var timeoutMessage: String {
+        if contains(.locationUnavailable) {
+            return """
+            le système ne peut pas déterminer la position. Sur un Mac de \
+            bureau, la localisation nécessite le Wi-Fi activé (même sans \
+            réseau connecté) — vérifie qu'il ne soit pas coupé.
+            """
+        }
+        if contains(.authorizationRequestInProgress) {
+            return "autorisation en attente — réponds à la demande de macOS puis réessaie."
+        }
+        if contains(.insufficientlyInUse) {
+            return "macOS considère l'app inactive — mets TyKaoz au premier plan et réessaie."
+        }
+        return "aucun fix obtenu dans le délai imparti"
+    }
+}
+
 /// Abstracts the underlying Core Location bits so the tool stays testable.
 protocol LocationProviding: Sendable {
     func currentLocation() async throws -> CLLocation
@@ -35,12 +68,15 @@ protocol LocationProviding: Sendable {
 final class AppleLocationProvider: NSObject, CLLocationManagerDelegate, LocationProviding {
     static let shared = AppleLocationProvider()
 
-    private static let fixTimeout: Duration = .seconds(15)
+    /// Cold Wi-Fi-based fixes can take longer than 15 s on macOS.
+    private static let fixTimeout: Duration = .seconds(25)
     private static let cachedFixMaxAge: TimeInterval = 60
 
     private let manager = CLLocationManager()
     private var authorizationContinuation: CheckedContinuation<CLAuthorizationStatus, Never>?
     private var lastFix: CLLocation?
+    /// Diagnostic signals seen during the current fix attempt.
+    private var signals: LocationFixSignals = []
 
     override init() {
         super.init()
@@ -54,6 +90,18 @@ final class AppleLocationProvider: NSObject, CLLocationManagerDelegate, Location
             return cached
         }
 
+        // Global Location Services switch off → fail fast with the fix,
+        // instead of a mute timeout. The API blocks, so query off-main.
+        let servicesEnabled = await Task.detached {
+            CLLocationManager.locationServicesEnabled()
+        }.value
+        guard servicesEnabled else {
+            throw LocationError.unavailable(message: """
+                le service de localisation est désactivé — active-le dans \
+                Réglages système → Confidentialité et sécurité → Localisation.
+                """)
+        }
+
         let status = await ensureAuthorized()
         switch status {
         case .denied:     throw LocationError.denied
@@ -61,6 +109,7 @@ final class AppleLocationProvider: NSObject, CLLocationManagerDelegate, Location
         default:          break
         }
 
+        signals = []
         return try await withThrowingTaskGroup(of: CLLocation.self) { group in
             group.addTask { @MainActor [weak self] in
                 for try await update in CLLocationUpdate.liveUpdates() {
@@ -70,6 +119,16 @@ final class AppleLocationProvider: NSObject, CLLocationManagerDelegate, Location
                     if update.authorizationRestricted {
                         throw LocationError.restricted
                     }
+                    // Record diagnostic hints so a timeout can explain itself.
+                    if update.locationUnavailable {
+                        self?.signals.insert(.locationUnavailable)
+                    }
+                    if update.authorizationRequestInProgress {
+                        self?.signals.insert(.authorizationRequestInProgress)
+                    }
+                    if update.insufficientlyInUse {
+                        self?.signals.insert(.insufficientlyInUse)
+                    }
                     if let location = update.location,
                        location.horizontalAccuracy >= 0 {
                         self?.lastFix = location
@@ -78,10 +137,17 @@ final class AppleLocationProvider: NSObject, CLLocationManagerDelegate, Location
                 }
                 throw LocationError.unavailable(message: "flux interrompu sans fix")
             }
-            group.addTask {
+            group.addTask { @MainActor [weak self] in
                 try await Task.sleep(for: Self.fixTimeout)
+                // Last resort: the system's cached fix beats an error —
+                // the tool flags its age to the model.
+                if let cached = self?.manager.location,
+                   cached.horizontalAccuracy >= 0 {
+                    return cached
+                }
                 throw LocationError.unavailable(
-                    message: "aucun fix obtenu dans le délai imparti"
+                    message: self?.signals.timeoutMessage
+                        ?? "aucun fix obtenu dans le délai imparti"
                 )
             }
 

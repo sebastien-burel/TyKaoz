@@ -92,8 +92,7 @@ final class WikiFileWatcher {
             guard let self else { return }
             try? await Task.sleep(for: .milliseconds(Int(self.debounceMs)))
             guard !Task.isCancelled else { return }
-            let indexer = self.context.makeIndexer()
-            if let report = try? await indexer.reindexAll() {
+            if let report = try? await self.context.reindexAll() {
                 self.lastIndexReport = report
                 self.onIndexed?()
             }

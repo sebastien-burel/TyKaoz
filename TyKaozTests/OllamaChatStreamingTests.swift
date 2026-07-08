@@ -39,6 +39,34 @@ struct OllamaChatStreamingTests {
     }
 
     @Test
+    func parsesMetricsOnFinalChunk() throws {
+        let line = Data(#"{"model":"llama","message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":300,"prompt_eval_duration":1500000000,"eval_count":120,"eval_duration":2400000000}"#.utf8)
+        let info = try OllamaClient.parseChunk(line: line)
+        #expect(info.done == true)
+        #expect(info.promptTokens == 300)
+        #expect(info.completionTokens == 120)
+        #expect(info.evalDurationNanos == 2_400_000_000)
+        #expect(info.promptEvalDurationNanos == 1_500_000_000)
+        // 120 tokens / 2.4 s → 50 tok/s decode; 300 / 1.5 s → 200 tok/s prefill.
+        var m = GenerationMetrics()
+        m.completionTokens = info.completionTokens
+        m.generationDuration = Double(info.evalDurationNanos!) / 1e9
+        m.promptTokens = info.promptTokens
+        m.promptDuration = Double(info.promptEvalDurationNanos!) / 1e9
+        #expect(m.tokensPerSecond == 50.0)
+        #expect(m.promptTokensPerSecond == 200.0)
+    }
+
+    @Test
+    func contentChunkHasNoMetrics() throws {
+        let line = Data(#"{"model":"llama","message":{"role":"assistant","content":"Salut"},"done":false}"#.utf8)
+        let info = try OllamaClient.parseChunk(line: line)
+        #expect(info.promptTokens == nil)
+        #expect(info.completionTokens == nil)
+        #expect(info.evalDurationNanos == nil)
+    }
+
+    @Test
     func ignoresBlankLines() throws {
         let info = try OllamaClient.parseChunk(line: Data())
         #expect(info.textDelta == nil)

@@ -62,6 +62,12 @@ final class FileSpaceStore {
         }
     }
 
+    /// Resolves one space to its on-disk URL — for the UI's
+    /// "open in Finder" affordance.
+    func url(for space: FileSpace) -> URL? {
+        resolvedURL(for: space)
+    }
+
     // MARK: - Private
 
     private func resolvedURL(for space: FileSpace) -> URL? {

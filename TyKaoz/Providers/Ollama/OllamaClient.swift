@@ -151,6 +151,13 @@ struct OllamaClient {
                         )
                     }
 
+                    // Client-side TTFT, consistent with the OpenAI-compatible
+                    // path. Decode duration comes from the server's final
+                    // chunk (eval_duration) — more accurate than wall-clock.
+                    let clock = ContinuousClock()
+                    let requestStart = clock.now
+                    var firstToken: ContinuousClock.Instant?
+
                     var buffer = Data()
                     for try await byte in bytes {
                         if Task.isCancelled { break }
@@ -158,6 +165,7 @@ struct OllamaClient {
                             let info = try Self.parseChunk(line: buffer)
                             buffer.removeAll(keepingCapacity: true)
                             if let delta = info.textDelta {
+                                if firstToken == nil { firstToken = clock.now }
                                 continuation.yield(.textDelta(delta))
                             }
                             for tc in info.toolCalls {
@@ -168,6 +176,21 @@ struct OllamaClient {
                                 ))
                             }
                             if info.done {
+                                var metrics = GenerationMetrics()
+                                metrics.promptTokens = info.promptTokens
+                                metrics.completionTokens = info.completionTokens
+                                if let nanos = info.evalDurationNanos, nanos > 0 {
+                                    metrics.generationDuration = Double(nanos) / 1e9
+                                }
+                                if let nanos = info.promptEvalDurationNanos, nanos > 0 {
+                                    metrics.promptDuration = Double(nanos) / 1e9
+                                }
+                                if let firstToken {
+                                    metrics.timeToFirstToken = Self.seconds(requestStart.duration(to: firstToken))
+                                }
+                                if metrics != GenerationMetrics() {
+                                    continuation.yield(.metrics(metrics))
+                                }
                                 continuation.finish()
                                 return
                             }
@@ -199,15 +222,46 @@ struct OllamaClient {
 
     // MARK: - Chunk parsing
 
+    /// Converts a monotonic `Duration` to seconds as a Double.
+    static func seconds(_ d: Duration) -> Double {
+        let c = d.components
+        return Double(c.seconds) + Double(c.attoseconds) * 1e-18
+    }
+
     struct ChunkInfo: Equatable {
         let textDelta: String?
         let toolCalls: [ToolCallInfo]
         let done: Bool
+        /// Server-reported counters from the final chunk (nil otherwise).
+        let promptTokens: Int?
+        let completionTokens: Int?
+        /// Token-generation (decode) time in nanoseconds, from the server.
+        let evalDurationNanos: Int?
+        /// Prompt-processing (prefill) time in nanoseconds, from the server.
+        let promptEvalDurationNanos: Int?
 
         struct ToolCallInfo: Equatable {
             let id: String
             let name: String
             let argumentsJSON: String
+        }
+
+        init(
+            textDelta: String?,
+            toolCalls: [ToolCallInfo],
+            done: Bool,
+            promptTokens: Int? = nil,
+            completionTokens: Int? = nil,
+            evalDurationNanos: Int? = nil,
+            promptEvalDurationNanos: Int? = nil
+        ) {
+            self.textDelta = textDelta
+            self.toolCalls = toolCalls
+            self.done = done
+            self.promptTokens = promptTokens
+            self.completionTokens = completionTokens
+            self.evalDurationNanos = evalDurationNanos
+            self.promptEvalDurationNanos = promptEvalDurationNanos
         }
     }
 
@@ -232,7 +286,11 @@ struct OllamaClient {
             return ChunkInfo(
                 textDelta: textDelta,
                 toolCalls: toolCalls,
-                done: chunk.done
+                done: chunk.done,
+                promptTokens: chunk.promptEvalCount,
+                completionTokens: chunk.evalCount,
+                evalDurationNanos: chunk.evalDuration,
+                promptEvalDurationNanos: chunk.promptEvalDuration
             )
         } catch {
             throw OllamaClientError.decoding(message: error.localizedDescription)

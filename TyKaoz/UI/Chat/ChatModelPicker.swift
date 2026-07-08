@@ -50,6 +50,8 @@ struct ChatModelPicker: View {
             return formatLabel(provider, model: settings.anthropicModel)
         case .apple:
             return provider.displayName
+        case .comfyui:
+            return formatLabel(provider, model: settings.comfyuiModel)
         case .deepseek:
             return formatLabel(provider, model: settings.deepseekModel)
         case .google:
@@ -166,6 +168,7 @@ struct ChatModelPicker: View {
         switch provider {
         case .anthropic: return settings.anthropicModel == model
         case .apple:     return true
+        case .comfyui:   return settings.comfyuiModel == model
         case .deepseek:  return settings.deepseekModel == model
         case .google:    return settings.googleModel == model
         case .localOpenAI: return settings.localOpenAIModel == model
@@ -183,6 +186,7 @@ struct ChatModelPicker: View {
         switch provider {
         case .anthropic: settings.anthropicModel = model
         case .apple:     break
+        case .comfyui:   settings.comfyuiModel = model
         case .deepseek:  settings.deepseekModel = model
         case .google:    settings.googleModel = model
         case .localOpenAI: settings.localOpenAIModel = model

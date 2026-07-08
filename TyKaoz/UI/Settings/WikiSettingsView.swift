@@ -11,6 +11,8 @@ struct WikiSettingsView: View {
     @State private var reindexing = false
     @State private var rebuilding = false
     @State private var lastReindexAt: Date?
+    @State private var resetting = false
+    @State private var confirmingReset = false
 
     var body: some View {
         @Bindable var settings = settings
@@ -20,10 +22,45 @@ struct WikiSettingsView: View {
                 Toggle("Activer le Wiki LLM", isOn: $settings.wikiEnabled)
                 statusRow
                 if settings.wikiEnabled {
-                    Text("Emplacement : \(WikiManager.defaultStoreRoot().path)")
-                        .font(Brand.Fonts.mono(11))
+                    Toggle(
+                        "Injecter le contexte wiki dans chaque conversation",
+                        isOn: $settings.wikiContextEnabled
+                    )
+                    Text("""
+                    Catalogue des pages, ajouté en contexte système pour que \
+                    le modèle consulte le wiki de lui-même. Désactivé pour \
+                    Apple Intelligence.
+                    """)
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.secondary)
+
+                    if settings.wikiContextEnabled {
+                        Toggle(
+                            "Curation automatique",
+                            isOn: $settings.wikiAutoCuration
+                        )
+                        Text("""
+                        Activé, le modèle enrichit le wiki de lui-même au fil \
+                        des conversations. Désactivé (par défaut), il ne l'écrit \
+                        que si tu le demandes ou via « Wikifier » — tu choisis \
+                        ce qui est enregistré. La lecture reste toujours active.
+                        """)
+                        .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    }
+                    HStack(spacing: 6) {
+                        Text("Emplacement : \(WikiManager.defaultStoreRoot().path)")
+                            .font(Brand.Fonts.mono(11))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                        Button {
+                            NSWorkspace.shared.open(WikiManager.defaultStoreRoot())
+                        } label: {
+                            Image(systemName: "arrow.up.forward.square")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Ouvrir le dossier du wiki dans le Finder")
+                    }
                     Text("Embedder : \(embedderSummary)")
                         .font(Brand.Fonts.mono(11))
                         .foregroundStyle(.secondary)
@@ -164,11 +201,51 @@ struct WikiSettingsView: View {
                     """)
                         .font(Brand.Fonts.body(11))
                         .foregroundStyle(.secondary)
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        confirmingReset = true
+                    } label: {
+                        if resetting {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Réinitialisation…")
+                            }
+                        } else {
+                            Text("Réinitialiser le wiki…")
+                        }
+                    }
+                    .disabled(resetting || rebuilding || reindexing || wiki.state.context == nil)
+                    Text("""
+                    Supprime toutes les pages et vide le journal. Conserve tes \
+                    sources importées (raw/) et tes conventions (AGENTS.md). \
+                    Réversible via git dans le dossier du wiki.
+                    """)
+                        .font(Brand.Fonts.body(11))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
         .formStyle(.grouped)
         .onAppear(perform: healStaleMLXModelID)
+        .confirmationDialog(
+            "Réinitialiser le wiki ?",
+            isPresented: $confirmingReset,
+            titleVisibility: .visible
+        ) {
+            Button("Supprimer toutes les pages", role: .destructive) {
+                Task {
+                    resetting = true
+                    await wiki.resetWiki(settings: settings)
+                    lastReindexAt = .now
+                    resetting = false
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            Text("Toutes les pages et le journal sont supprimés. Tes sources (raw/) et conventions sont conservées. Réversible via git.")
+        }
     }
 
     // MARK: - Embedder summary + MLX model selection

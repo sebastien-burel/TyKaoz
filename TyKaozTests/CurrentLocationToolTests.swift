@@ -39,4 +39,43 @@ struct CurrentLocationToolTests {
             _ = try await tool.execute(arguments: self.args([:]))
         }
     }
+
+    @Test
+    func flagsStaleFixWithItsAge() async throws {
+        let old = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 48.0, longitude: -1.7),
+            altitude: 0,
+            horizontalAccuracy: 20,
+            verticalAccuracy: -1,
+            timestamp: Date(timeIntervalSinceNow: -1_800)   // 30 min ago
+        )
+        let tool = CurrentLocationTool(provider: FakeProvider(.success(old)))
+        let output = try await tool.execute(arguments: args(["include_address": false]))
+        #expect(output.contains("il y a 30 min"))
+        #expect(output.contains("possiblement ancienne"))
+    }
+
+    @Test
+    func freshFixHasNoStaleWarning() async throws {
+        let fresh = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 48.0, longitude: -1.7),
+            altitude: 0,
+            horizontalAccuracy: 20,
+            verticalAccuracy: -1,
+            timestamp: .now
+        )
+        let tool = CurrentLocationTool(provider: FakeProvider(.success(fresh)))
+        let output = try await tool.execute(arguments: args(["include_address": false]))
+        #expect(!output.contains("possiblement ancienne"))
+    }
+
+    @Test
+    func timeoutMessageExplainsTheSignals() {
+        #expect(LocationFixSignals([.locationUnavailable]).timeoutMessage.contains("Wi-Fi"))
+        #expect(LocationFixSignals([.authorizationRequestInProgress]).timeoutMessage.contains("autorisation"))
+        #expect(LocationFixSignals([.insufficientlyInUse]).timeoutMessage.contains("premier plan"))
+        // locationUnavailable wins when several signals are present.
+        #expect(LocationFixSignals([.locationUnavailable, .insufficientlyInUse]).timeoutMessage.contains("Wi-Fi"))
+        #expect(LocationFixSignals([]).timeoutMessage == "aucun fix obtenu dans le délai imparti")
+    }
 }

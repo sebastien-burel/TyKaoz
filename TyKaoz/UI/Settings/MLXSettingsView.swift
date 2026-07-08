@@ -311,14 +311,20 @@ struct MLXSettingsView: View {
     @ViewBuilder
     private var addCustomRow: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("mlx-community/gpt-oss-20b-MXFP4-Q4", text: $customID)
+            Text("Ajouter un modèle par son adresse HuggingFace")
+                .font(Brand.Fonts.body(12))
+                .foregroundStyle(Brand.Colors.ink)
+            TextField(text: $customID) {
+                Text("organisation/nom-du-dépôt")
+            }
                 .textFieldStyle(.roundedBorder)
                 .font(Brand.Fonts.mono(12))
                 .onSubmit(addCustomModel)
             HStack {
                 Text("""
-                Slug HuggingFace d'un dépôt MLX. Traité comme un modèle \
-                de chat et téléchargé immédiatement.
+                L'adresse d'un dépôt MLX sur HuggingFace (au format \
+                organisation/nom). Traité comme un modèle de chat et \
+                téléchargé immédiatement.
                 """)
                 .font(Brand.Fonts.body(11))
                 .foregroundStyle(.secondary)

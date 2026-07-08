@@ -70,6 +70,11 @@ struct Message: Identifiable, Hashable, Codable {
     /// display metadata — never sent to the LLM.
     var model: String?
 
+    /// Performance metrics for an assistant turn (token counts, throughput,
+    /// time-to-first-token). Set when the provider can measure them. Display
+    /// metadata only — never sent to the LLM.
+    var metrics: GenerationMetrics?
+
     init(
         id: UUID = UUID(),
         role: Role,
@@ -81,7 +86,8 @@ struct Message: Identifiable, Hashable, Codable {
         toolIsError: Bool? = nil,
         reasoningContent: String? = nil,
         thoughtSignature: String? = nil,
-        model: String? = nil
+        model: String? = nil,
+        metrics: GenerationMetrics? = nil
     ) {
         self.id = id
         self.role = role

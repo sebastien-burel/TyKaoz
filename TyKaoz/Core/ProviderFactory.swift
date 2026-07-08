@@ -16,6 +16,20 @@ enum ProviderFactory {
         case "apple":
             return AppleIntelligenceProvider(toolRegistry: tools)
 
+        case "comfyui":
+            guard let url = settings.comfyuiBaseURL,
+                  let name = settings.comfyuiModel,
+                  let json = settings.comfyuiWorkflows[name],
+                  !json.isEmpty
+            else { return nil }
+            return ComfyUIProvider(
+                baseURL: url,
+                apiKey: settings.comfyuiAPIKey,
+                workflowName: name,
+                workflowJSON: json,
+                params: settings.comfyuiParams(for: name)
+            )
+
         case "deepseek":
             guard !settings.deepseekAPIKey.isEmpty,
                   let model = settings.deepseekModel,

@@ -11,7 +11,8 @@ struct SearchWikiTool: Tool {
         Hybrid search across the local knowledge wiki: KNN over chunk
         embeddings + BM25 over chunk text, fused and graph-expanded
         1–2 hops. Returns the most relevant pages with snippet, hop
-        distance to a direct match, and a relevance score.
+        distance to a direct match, and a relevance score. For a full
+        table of contents instead, call read_page with id "index".
         """,
         inputSchemaJSON: """
         {

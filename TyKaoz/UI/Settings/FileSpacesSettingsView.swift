@@ -80,6 +80,20 @@ struct FileSpacesSettingsView: View {
                         .font(Brand.Fonts.body(13))
                         .foregroundStyle(Brand.Colors.ink)
                     Spacer()
+                    if let url = store.url(for: space) {
+                        Button {
+                            // Sandbox: the folder lives outside our container,
+                            // so we must hold its security-scoped access while
+                            // asking Finder to reveal it.
+                            let didStart = url.startAccessingSecurityScopedResource()
+                            defer { if didStart { url.stopAccessingSecurityScopedResource() } }
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } label: {
+                            Image(systemName: "arrow.up.forward.square")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Afficher ce dossier dans le Finder")
+                    }
                     Button(role: .destructive) {
                         store.remove(id: space.id)
                     } label: {

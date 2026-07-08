@@ -135,6 +135,74 @@ final class AppSettings {
         didSet { defaults.set(zaiModel, forKey: Keys.zaiModel) }
     }
 
+    // MARK: - ComfyUI (image generation)
+
+    var comfyuiBaseURLString: String {
+        didSet { defaults.set(comfyuiBaseURLString, forKey: Keys.comfyuiBaseURL) }
+    }
+
+    /// Optional bearer token. ComfyUI core has no auth; a deployment behind
+    /// a gateway might.
+    var comfyuiAPIKey: String {
+        didSet { KeychainStore.set(comfyuiAPIKey, account: KeychainAccounts.comfyuiAPIKey) }
+    }
+
+    /// Active workflow name (the "model").
+    var comfyuiModel: String? {
+        didSet { defaults.set(comfyuiModel, forKey: Keys.comfyuiModel) }
+    }
+
+    /// Named ComfyUI workflows (API-format JSON). Each name is a selectable
+    /// "model" in the picker; the JSON is the graph carrying a `%prompt%`
+    /// marker. Stored as a `[String: String]` dictionary in UserDefaults.
+    var comfyuiWorkflows: [String: String] {
+        didSet { defaults.set(comfyuiWorkflows, forKey: Keys.comfyuiWorkflows) }
+    }
+
+    /// Per-workflow values for the `%name%` markers a workflow exposes:
+    /// `[workflowName: [paramName: value]]`. A `seed` value that isn't a
+    /// number means "randomise each run". Absent entries fall back to the
+    /// marker's inline default.
+    var comfyuiWorkflowParams: [String: [String: String]] {
+        didSet { defaults.set(comfyuiWorkflowParams, forKey: Keys.comfyuiWorkflowParams) }
+    }
+
+    func comfyuiParams(for workflow: String) -> [String: String] {
+        comfyuiWorkflowParams[workflow] ?? [:]
+    }
+
+    func setComfyuiParam(_ value: String, name: String, for workflow: String) {
+        var values = comfyuiWorkflowParams[workflow] ?? [:]
+        values[name] = value
+        comfyuiWorkflowParams[workflow] = values
+    }
+
+    var comfyuiBaseURL: URL? {
+        let trimmed = comfyuiBaseURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil
+        else { return nil }
+        return url
+    }
+
+    /// Adds or replaces a named workflow. Selects it as active when none is.
+    func addComfyUIWorkflow(name: String, json: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        comfyuiWorkflows[name] = json
+        if comfyuiModel == nil { comfyuiModel = name }
+    }
+
+    /// Drops a workflow, moving the active selection off it if needed.
+    func removeComfyUIWorkflow(name: String) {
+        comfyuiWorkflows[name] = nil
+        comfyuiWorkflowParams[name] = nil
+        if comfyuiModel == name { comfyuiModel = comfyuiWorkflows.keys.sorted().first }
+    }
+
     // MARK: - Per-provider catalogs
 
     var anthropicCatalog: [String] = [] {
@@ -177,6 +245,7 @@ final class AppSettings {
         switch provider {
         case .anthropic:    return anthropicCatalog
         case .apple:        return []
+        case .comfyui:      return comfyuiWorkflows.keys.sorted()
         case .deepseek:     return deepseekCatalog
         case .google:       return googleCatalog
         case .localOpenAI:  return localOpenAICatalog
@@ -197,6 +266,7 @@ final class AppSettings {
         switch provider {
         case .anthropic:    anthropicCatalog = ids
         case .apple:        break
+        case .comfyui:      break   // workflows are managed directly, not fetched
         case .deepseek:     deepseekCatalog = ids
         case .google:       googleCatalog = ids
         case .localOpenAI:  localOpenAICatalog = ids
@@ -260,6 +330,7 @@ final class AppSettings {
         switch provider {
         case .anthropic:    return enabledAnthropicModels
         case .apple:        return []
+        case .comfyui:      return Set(comfyuiWorkflows.keys)
         case .deepseek:     return enabledDeepSeekModels
         case .google:       return enabledGoogleModels
         case .localOpenAI:  return enabledLocalOpenAIModels
@@ -279,6 +350,10 @@ final class AppSettings {
             constrainActive(&anthropicModel, to: enabledAnthropicModels)
         case .apple:
             break
+        case .comfyui:
+            // Enabling needs the workflow JSON (added via the settings view);
+            // only removal is meaningful here.
+            if !enabled { removeComfyUIWorkflow(name: modelID) }
         case .deepseek:
             if enabled { enabledDeepSeekModels.insert(modelID) } else { enabledDeepSeekModels.remove(modelID) }
             constrainActive(&deepseekModel, to: enabledDeepSeekModels)
@@ -344,6 +419,21 @@ final class AppSettings {
     /// any provider, the index DB stays untouched, no file-watcher.
     var wikiEnabled: Bool {
         didSet { defaults.set(wikiEnabled, forKey: Keys.wikiEnabled) }
+    }
+
+    /// Injects the wiki preamble (conventions + catalog + behavioral
+    /// instructions) as system context on each send. On by default —
+    /// it's what makes the model actually use the wiki.
+    var wikiContextEnabled: Bool {
+        didSet { defaults.set(wikiContextEnabled, forKey: Keys.wikiContextEnabled) }
+    }
+
+    /// When on, the model enriches the wiki on its own as you chat. Off by
+    /// default: writes are deliberate (explicit request or the "Wikifier"
+    /// action), so you choose what gets saved. Reading the wiki to answer
+    /// is always on.
+    var wikiAutoCuration: Bool {
+        didSet { defaults.set(wikiAutoCuration, forKey: Keys.wikiAutoCuration) }
     }
 
     /// Embedding model name used at the Ollama side (e.g. `bge-m3`,
@@ -450,6 +540,11 @@ final class AppSettings {
         self.qwenModel = defaults.string(forKey: Keys.qwenModel)
         self.zaiAPIKey = KeychainStore.get(account: KeychainAccounts.zaiAPIKey) ?? ""
         self.zaiModel = defaults.string(forKey: Keys.zaiModel)
+        self.comfyuiBaseURLString = defaults.string(forKey: Keys.comfyuiBaseURL) ?? "http://localhost:8188"
+        self.comfyuiAPIKey = KeychainStore.get(account: KeychainAccounts.comfyuiAPIKey) ?? ""
+        self.comfyuiModel = defaults.string(forKey: Keys.comfyuiModel)
+        self.comfyuiWorkflows = defaults.dictionary(forKey: Keys.comfyuiWorkflows) as? [String: String] ?? [:]
+        self.comfyuiWorkflowParams = defaults.dictionary(forKey: Keys.comfyuiWorkflowParams) as? [String: [String: String]] ?? [:]
         self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
         self.googleCatalog = defaults.array(forKey: Keys.catalog(.google)) as? [String] ?? []
@@ -472,6 +567,9 @@ final class AppSettings {
         self.appleEnabledTools = Set(defaults.array(forKey: Keys.appleEnabledTools) as? [String] ?? [])
         self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
         self.wikiEnabled = defaults.bool(forKey: Keys.wikiEnabled)
+        // Default-true: absent key means enabled.
+        self.wikiContextEnabled = defaults.object(forKey: Keys.wikiContextEnabled) as? Bool ?? true
+        self.wikiAutoCuration = defaults.bool(forKey: Keys.wikiAutoCuration)
         self.wikiEmbeddingModelID = defaults.string(forKey: Keys.wikiEmbeddingModelID) ?? "nomic-embed-text"
         let storedDim = defaults.integer(forKey: Keys.wikiEmbeddingDimension)
         self.wikiEmbeddingDimension = storedDim > 0 ? storedDim : 768
@@ -499,9 +597,15 @@ final class AppSettings {
         static let openaiModel = "openai.selectedModel"
         static let qwenModel = "qwen.selectedModel"
         static let zaiModel = "zai.selectedModel"
+        static let comfyuiBaseURL = "comfyui.baseURL"
+        static let comfyuiModel = "comfyui.selectedModel"
+        static let comfyuiWorkflows = "comfyui.workflows"
+        static let comfyuiWorkflowParams = "comfyui.workflowParams"
         static let disabledTools = "tools.disabled"
         static let appleEnabledTools = "tools.apple.enabled"
         static let wikiEnabled = "wiki.enabled"
+        static let wikiContextEnabled = "wiki.contextEnabled"
+        static let wikiAutoCuration = "wiki.autoCuration"
         static let wikiEmbeddingModelID = "wiki.embeddingModelID"
         static let wikiEmbeddingDimension = "wiki.embeddingDimension"
         static let wikiEmbeddingProviderID = "wiki.embeddingProviderID"
@@ -526,6 +630,7 @@ final class AppSettings {
         static let openaiAPIKey = "openai.apiKey"
         static let qwenAPIKey = "qwen.apiKey"
         static let zaiAPIKey = "zai.apiKey"
+        static let comfyuiAPIKey = "comfyui.apiKey"
         static let braveAPIKey = "brave.apiKey"
     }
 }

@@ -1,8 +1,7 @@
 import Foundation
 
-/// Enumerates files under `raw/` — the immutable inputs to the wiki.
-/// Conversations TyKaoz mirrors there automatically (Q1=(b)),
-/// drag-drop imports and Apple frameworks (Q4) feed it later.
+/// Enumerates files under `raw/` — the immutable inputs to the wiki,
+/// populated by the user (mirrored conversations, imported documents).
 struct ListSourcesTool: Tool {
     let context: WikiContext
 
@@ -10,8 +9,8 @@ struct ListSourcesTool: Tool {
         name: "list_sources",
         description: """
         Lists raw source files available to the wiki: conversation
-        transcripts, imported documents, future Apple syncs. Returns
-        each entry's id (filename without extension), kind (extension),
+        transcripts and documents the user imported. Returns each
+        entry's id (filename without extension), kind (extension),
         size in bytes and last modification date so you can pick the
         most relevant ones before calling read_source.
         """,
@@ -59,6 +58,8 @@ struct ListSourcesTool: Tool {
             let ext = url.pathExtension.lowercased()
             if let kindFilter = args.kind?.lowercased(), ext != kindFilter { continue }
             let relative = url.path.replacingOccurrences(of: context.rawRoot.path + "/", with: "")
+            // Preserved binaries of converted imports — not readable sources.
+            if relative.hasPrefix("originals/") { continue }
             let id = (relative as NSString).deletingPathExtension
             entries.append((
                 id: id,

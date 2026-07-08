@@ -43,4 +43,18 @@ struct ConversationTitlerTests {
         #expect(ConversationTitler.clean("") == "")
         #expect(ConversationTitler.clean("   ") == "")
     }
+
+    @Test
+    func fallbackUsesFirstUserMessageFlattenedAndCapped() {
+        #expect(ConversationTitler.fallback(from: "Que peux-tu me dire sur Taïwan ?")
+            == "Que peux-tu me dire sur Taïwan ?")
+        // Long input is capped with an ellipsis.
+        let long = ConversationTitler.fallback(from: String(repeating: "mot ", count: 30))
+        #expect(long.count <= 41)
+        #expect(long.hasSuffix("…"))
+        // Newlines are flattened.
+        #expect(!ConversationTitler.fallback(from: "ligne1\nligne2").contains("\n"))
+        // Empty input degrades to the default sentinel.
+        #expect(ConversationTitler.fallback(from: "   ") == ConversationTitler.defaultTitle)
+    }
 }

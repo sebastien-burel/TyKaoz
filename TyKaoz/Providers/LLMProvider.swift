@@ -39,6 +39,46 @@ enum StreamEvent: Sendable, Hashable {
     /// inline as base64). ChatSession persists it as an attachment on the
     /// assistant message.
     case imageOutput(data: Data, mimeType: String)
+    /// Performance metrics for the turn, emitted once when the stream ends.
+    /// Providers that can't measure anything never emit it.
+    case metrics(GenerationMetrics)
+}
+
+/// Performance metrics for one assistant turn. Every field is optional —
+/// each backend fills what it can measure or report. OpenAI-compatible
+/// servers (vLLM, NIM, LM Studio, llama.cpp…) report token counts via the
+/// `usage` block; durations are measured client-side from the byte stream.
+/// Other backends (Apple Intelligence) may leave most fields nil. Stored on
+/// the assistant `Message` for display and persistence; never sent to the LLM.
+struct GenerationMetrics: Sendable, Hashable, Codable {
+    /// Input tokens, as reported by the server's usage block.
+    var promptTokens: Int? = nil
+    /// Output tokens generated, as reported by the server's usage block.
+    var completionTokens: Int? = nil
+    /// Seconds from request sent to the first token received (client-measured).
+    var timeToFirstToken: TimeInterval? = nil
+    /// Seconds from the first token to the last — the decode window,
+    /// excluding the initial latency captured by `timeToFirstToken`.
+    var generationDuration: TimeInterval? = nil
+    /// Seconds spent processing the prompt (prefill), as reported by the
+    /// server. Ollama provides it; OpenAI-compatible servers don't, so it
+    /// stays nil there.
+    var promptDuration: TimeInterval? = nil
+
+    /// Decode throughput: output tokens over the generation window. nil
+    /// unless both are known and the window is positive. Derived, so never
+    /// drifts from the raw measurements.
+    var tokensPerSecond: Double? {
+        guard let completionTokens, let generationDuration, generationDuration > 0 else { return nil }
+        return Double(completionTokens) / generationDuration
+    }
+
+    /// Prefill throughput: prompt tokens over the prompt-processing window.
+    /// nil unless both are known and the window is positive.
+    var promptTokensPerSecond: Double? {
+        guard let promptTokens, let promptDuration, promptDuration > 0 else { return nil }
+        return Double(promptTokens) / promptDuration
+    }
 }
 
 struct ChatMessage: Hashable, Sendable {

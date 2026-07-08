@@ -30,7 +30,9 @@ enum ModelHeuristic {
         switch provider {
         case .ollama, .mistral, .openai, .anthropic, .google, .deepseek, .qwen, .zai, .localOpenAI, .mlx:
             return !nonChatHints.contains(where: lower.contains)
-        case .apple:
+        case .apple, .comfyui:
+            // Apple has one model; ComfyUI "models" are user-named workflows —
+            // neither is filtered by the id heuristic.
             return true
         }
     }

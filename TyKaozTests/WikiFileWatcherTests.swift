@@ -40,7 +40,8 @@ struct WikiFileWatcherTests {
         let count = try await ctx.pool.read { db in
             try Int.fetchOne(db, sql: "SELECT count(*) FROM pages;") ?? -1
         }
-        #expect(count == 1)
+        // p1 plus the generated index.md catalog page.
+        #expect(count == 2)
         #expect(watcher.lastIndexReport?.added == 1)
     }
 

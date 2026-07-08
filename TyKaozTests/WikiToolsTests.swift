@@ -175,6 +175,20 @@ struct WikiToolsTests {
     }
 
     @Test
+    func listSourcesExcludesPreservedOriginals() async throws {
+        let (ctx, tempDir) = try await Self.makeContext()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try Self.write(in: ctx.rawRoot, "rapport.md", "# Converti depuis PDF")
+        try Self.write(in: ctx.rawRoot, "originals/rapport.pdf", "binaire")
+
+        let tool = ListSourcesTool(context: ctx)
+        let args = try JSONSerialization.data(withJSONObject: [:] as [String: Any])
+        let out = try await tool.execute(arguments: args)
+        #expect(out.contains("rapport"))
+        #expect(!out.contains("originals/"))
+    }
+
+    @Test
     func listSourcesFiltersByKind() async throws {
         let (ctx, tempDir) = try await Self.makeContext()
         defer { try? FileManager.default.removeItem(at: tempDir) }
