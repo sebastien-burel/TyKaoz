@@ -9,6 +9,12 @@ final class AppSettings {
         didSet { defaults.set(selectedProviderID, forKey: Keys.selectedProvider) }
     }
 
+    /// Speech-to-text engine for prompt dictation: "apple" (system
+    /// dictation, default) or "parakeet" (local Parakeet V3 model).
+    var transcriptionEngineID: String {
+        didSet { defaults.set(transcriptionEngineID, forKey: Keys.transcriptionEngineID) }
+    }
+
     // MARK: - Anthropic
 
     var anthropicAPIKey: String {
@@ -521,6 +527,7 @@ final class AppSettings {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.selectedProviderID = defaults.string(forKey: Keys.selectedProvider) ?? "ollama"
+        self.transcriptionEngineID = defaults.string(forKey: Keys.transcriptionEngineID) ?? "apple"
         self.anthropicAPIKey = KeychainStore.get(account: KeychainAccounts.anthropicAPIKey) ?? ""
         self.anthropicModel = defaults.string(forKey: Keys.anthropicModel)
         self.deepseekAPIKey = KeychainStore.get(account: KeychainAccounts.deepseekAPIKey) ?? ""
@@ -586,6 +593,7 @@ final class AppSettings {
 
     private enum Keys {
         static let selectedProvider = "providers.selected"
+        static let transcriptionEngineID = "dictation.engineID"
         static let serverURL = "ollama.serverURL"
         static let selectedModel = "ollama.selectedModel"
         static let anthropicModel = "anthropic.selectedModel"

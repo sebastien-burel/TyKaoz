@@ -170,6 +170,7 @@
 				32B9B9322FD2919E007412B7 /* Tokenizers */,
 				32B9BABC2FD2B403007412B7 /* MLXVLM */,
 				32E984152FE17D62006447E9 /* XSBridgeKit */,
+				32D1C7A22FE9A00000000002 /* FluidAudio */,
 			);
 			productName = TyKaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TyKaoz.app */;
@@ -262,6 +263,7 @@
 				32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */,
 				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */,
+				32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -477,6 +479,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TyKaoz utilise le micro pour dicter vos messages.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TyKaoz transcrit votre voix en texte, en local.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -530,6 +534,8 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSLocationUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "TyKaoz utilise votre position pour l'outil current_location lorsqu'un modèle vous le demande.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "TyKaoz utilise le micro pour dicter vos messages.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "TyKaoz transcrit votre voix en texte, en local.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -778,9 +784,22 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.12.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		32D1C7A22FE9A00000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
 		326262872FC455B3001B46C0 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 326262862FC455B3001B46C0 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;

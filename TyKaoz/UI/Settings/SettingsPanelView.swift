@@ -46,6 +46,7 @@ struct SettingsPanelView: View {
         case .memory:               MemorySettingsView()
         case .plugins:              PluginsSettingsView()
         case .wiki:                 WikiSettingsView()
+        case .dictation:            DictationSettingsView()
         }
     }
 }
@@ -59,6 +60,7 @@ enum SettingsSection: Hashable {
     case memory
     case plugins
     case wiki
+    case dictation
 
     var title: String {
         switch self {
@@ -68,6 +70,7 @@ enum SettingsSection: Hashable {
         case .memory:           return "Préférences"
         case .plugins:          return "Plugins"
         case .wiki:             return "Wiki"
+        case .dictation:        return "Dictée"
         }
     }
 }
@@ -93,6 +96,7 @@ private struct ProvidersSidebar: View {
                 toolRow(title: "Préférences", systemImage: "brain", section: .memory)
                 toolRow(title: "Plugins", systemImage: "puzzlepiece.extension", section: .plugins)
                 toolRow(title: "Wiki", systemImage: "books.vertical", section: .wiki)
+                toolRow(title: "Dictée", systemImage: "mic", section: .dictation)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -22,6 +22,8 @@ struct ChatView: View {
     /// store. Cleared when switching conversations.
     @State private var pendingImages: [PendingImage] = []
     @State private var isImageImporterPresented = false
+    /// Voice dictation session for the mic button; writes into the draft.
+    @State private var dictation = DictationController()
     /// Drives keyboard focus on the message field so the user can type
     /// straight away: on opening a conversation and once a reply finishes.
     @FocusState private var inputFocused: Bool
@@ -224,10 +226,14 @@ struct ChatView: View {
             if !pendingImages.isEmpty {
                 pendingImagesStrip
             }
+            if case .failed(let message, let isPermission) = dictation.phase {
+                dictationErrorRow(message: message, isPermission: isPermission)
+            }
             HStack(spacing: 8) {
                 if supportsImages {
                     attachButton
                 }
+                micButton
                 TextField(placeholder, text: draftBinding, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(Brand.Fonts.body(14))
@@ -265,7 +271,10 @@ struct ChatView: View {
         // Only claims the event when the clipboard holds an image and a VLM
         // is active, so plain text paste is untouched.
         .background(ImagePasteCatcher(isEnabled: supportsImages, onPaste: pasteImageFromClipboard))
-        .onChange(of: conversation?.id) { _, _ in pendingImages = [] }
+        .onChange(of: conversation?.id) { _, _ in
+            pendingImages = []
+            dictation.cancel()
+        }
     }
 
     /// The active model can take images. Drives the attach button, drop
@@ -317,6 +326,53 @@ struct ChatView: View {
         .buttonStyle(.plain)
         .disabled(!canType)
         .help(maxImages == 1 ? "Joindre une image" : "Joindre des images")
+    }
+
+    @ViewBuilder
+    private var micButton: some View {
+        if dictation.phase == .finishing {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 24)
+                .help("Transcription en cours…")
+        } else {
+            Button {
+                dictation.toggle(
+                    engineID: settings.transcriptionEngineID,
+                    draft: draftBinding.wrappedValue
+                ) { draftBinding.wrappedValue = $0 }
+            } label: {
+                Image(systemName: dictation.isRecording ? "mic.fill" : "mic")
+                    .font(.system(size: 20))
+                    .foregroundStyle(micColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canType)
+            .help(dictation.isRecording ? "Arrêter la dictée" : "Dicter le message")
+        }
+    }
+
+    private var micColor: Color {
+        if dictation.isRecording { return Brand.Colors.ember }
+        return canType ? Brand.Colors.tide : Brand.Colors.slate.opacity(0.3)
+    }
+
+    private func dictationErrorRow(message: String, isPermission: Bool) -> some View {
+        HStack(spacing: 8) {
+            Text(message)
+                .font(Brand.Fonts.body(11))
+                .foregroundStyle(Brand.Colors.ember)
+            if isPermission {
+                Button("Ouvrir Réglages Système") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.link)
+                .font(Brand.Fonts.body(11))
+            }
+            Spacer()
+        }
     }
 
     private var pendingImagesStrip: some View {

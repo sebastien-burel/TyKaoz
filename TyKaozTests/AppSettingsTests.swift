@@ -45,6 +45,18 @@ struct AppSettingsTests {
     }
 
     @Test
+    func transcriptionEngineDefaultsToAppleAndPersists() {
+        let defaults = makeDefaults()
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.transcriptionEngineID == "apple")
+
+        settings.transcriptionEngineID = "parakeet"
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.transcriptionEngineID == "parakeet")
+    }
+
+    @Test
     func migratesRemovedLocalOpenAIEmbedderToOllama() {
         let defaults = makeDefaults()
         defaults.set("localOpenAI", forKey: "wiki.embeddingProviderID")
