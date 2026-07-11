@@ -110,6 +110,8 @@ final class ChatSession {
         tools: ToolRegistry,
         memoryContext: String?
     ) async throws {
+        // One-shot guard for the reasoning-only retry below.
+        var reasoningOnlyRetryUsed = false
         for round in 0..<Self.maxToolRounds {
             if Task.isCancelled { return }
 
@@ -181,7 +183,31 @@ final class ChatSession {
                 }
             }
 
-            if pendingCalls.isEmpty { return }
+            if pendingCalls.isEmpty {
+                // Thinking models (e.g. LFM2.5 on MLX) sometimes finish
+                // their reasoning and stop without ever emitting the
+                // answer. Retry the round once — the dead-end bubble is
+                // dropped, same prompt, fresh sample. If it happens again,
+                // say so in the transcript instead of ending in silence.
+                if let idx = conversation.wrappedValue.messages.firstIndex(where: { $0.id == assistantID }) {
+                    let message = conversation.wrappedValue.messages[idx]
+                    let hasText = !message.content
+                        .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    let reasoningOnly = !hasText
+                        && !(message.reasoningContent ?? "").isEmpty
+                        && (message.attachments ?? []).isEmpty
+                    if reasoningOnly {
+                        if !reasoningOnlyRetryUsed {
+                            reasoningOnlyRetryUsed = true
+                            conversation.wrappedValue.messages.remove(at: idx)
+                            continue
+                        }
+                        conversation.wrappedValue.messages[idx].content =
+                            "Le modèle a terminé sa réflexion sans formuler de réponse — relance ta question."
+                    }
+                }
+                return
+            }
 
             // Append the tool_call entries first so the UI can show them.
             for call in pendingCalls {

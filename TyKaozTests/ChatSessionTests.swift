@@ -130,6 +130,49 @@ struct ChatSessionTests {
         #expect(resultMsg?.content.contains("Unknown tool") == true)
     }
 
+    // MARK: - Reasoning-only rounds (thinking models that stop without answering)
+
+    @Test
+    func retriesOnceWhenRoundEndsWithReasoningOnly() async throws {
+        // Round 1: the model thinks but never answers. Round 2 (retry with
+        // the same prompt): it answers. The dead-end bubble must be gone.
+        let provider = ScriptedProvider(rounds: [
+            [.reasoningDelta("Je vais répondre en français…")],
+            [.textDelta("Il est midi.")]
+        ])
+        let session = ChatSession()
+
+        var conversation = Conversation(title: "test")
+        let binding = Binding(get: { conversation }, set: { conversation = $0 })
+
+        session.send(text: "Heure ?", in: binding, using: provider)
+        try await waitUntil { session.state == .idle }
+
+        #expect(conversation.messages.count == 2)
+        #expect(conversation.messages[1].role == .assistant)
+        #expect(conversation.messages[1].content == "Il est midi.")
+    }
+
+    @Test
+    func surfacesNoticeWhenReasoningOnlyPersistsAfterRetry() async throws {
+        let provider = ScriptedProvider(rounds: [
+            [.reasoningDelta("réflexion 1")],
+            [.reasoningDelta("réflexion 2")]
+        ])
+        let session = ChatSession()
+
+        var conversation = Conversation(title: "test")
+        let binding = Binding(get: { conversation }, set: { conversation = $0 })
+
+        session.send(text: "Heure ?", in: binding, using: provider)
+        try await waitUntil { session.state == .idle }
+
+        #expect(conversation.messages.count == 2)
+        let assistant = conversation.messages[1]
+        #expect(assistant.reasoningContent == "réflexion 2")
+        #expect(assistant.content.contains("sans formuler de réponse"))
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(2),
         _ condition: @MainActor () -> Bool
