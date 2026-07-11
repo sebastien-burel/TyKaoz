@@ -17,6 +17,9 @@ nonisolated final class TyKaozHostBridge: HostBridge {
     private let tools: ToolRegistry
     private let memory: MemoryStore
     private let log: @Sendable (String) -> Void
+    /// Resolves the agent's `import`s: the agent script itself (as `@agent`) and
+    /// any `.js` libraries under the user's libraries folder.
+    private let resolver: ModuleResolver
 
     /// Control channel for `__`-prefixed keys (e.g. `__finish`, `__toolResult`).
     /// Set once by the owning runtime before any script runs, so no real race.
@@ -26,12 +29,24 @@ nonisolated final class TyKaozHostBridge: HostBridge {
         makeProvider: @escaping @Sendable () -> (any LLMProvider)?,
         tools: ToolRegistry,
         memory: MemoryStore,
+        resolver: ModuleResolver,
         log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         self.makeProvider = makeProvider
         self.tools = tools
         self.memory = memory
+        self.resolver = resolver
         self.log = log
+    }
+
+    // MARK: - Module loading (ES imports)
+
+    func findModule(specifier: String, importer: String?) -> String? {
+        resolver.find(specifier: specifier, importer: importer)
+    }
+
+    func loadModule(id: String) -> String? {
+        resolver.load(id: id)
     }
 
     // MARK: - Prelude
@@ -81,10 +96,19 @@ nonisolated final class TyKaozHostBridge: HostBridge {
           }
         };
 
-        // Orchestrator entry: runs globalThis.run(input) and reports the result.
+        // Orchestrator entry: loads the agent as a module (so it can use static
+        // `import ... from`), then runs its `run(input)` export — falling back to
+        // globalThis.run for scripts that assign it the old way — and reports the
+        // result.
         globalThis.__runAgent = function (inputJSON) {
-          Promise.resolve()
-            .then(function () { return globalThis.run(JSON.parse(inputJSON)); })
+          var input = JSON.parse(inputJSON);
+          import('@agent')
+            .then(function (ns) {
+              var run = (ns && ns.run) || globalThis.run;
+              if (typeof run !== 'function')
+                throw new Error("l'agent ne définit pas run(input)");
+              return run(input);
+            })
             .then(function (r) {
               __nativeCall('__finish', [JSON.stringify(r === undefined ? null : r)],
                            function () {}, function () {});

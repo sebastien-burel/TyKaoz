@@ -27,7 +27,8 @@ nonisolated final class JSToolBundle: @unchecked Sendable {
         log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
         let bridge = TyKaozHostBridge(
-            makeProvider: makeProvider, tools: tools, memory: memory, log: log)
+            makeProvider: makeProvider, tools: tools, memory: memory,
+            resolver: ModuleResolver(entrySource: "", root: nil), log: log)
         guard let engine = XSEngine(host: bridge) else { return nil }
         self.bridge = bridge
         self.engine = engine

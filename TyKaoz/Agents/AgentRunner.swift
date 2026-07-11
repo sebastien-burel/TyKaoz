@@ -22,7 +22,8 @@ final class AgentRunner {
         fileSpaces: FileSpaceStore,
         memory: MemoryStore,
         plugins: PluginStore,
-        wiki: WikiManager
+        wiki: WikiManager,
+        libraries: AgentLibraryStore
     ) {
         guard state != .running else { return }
         state = .running
@@ -46,9 +47,16 @@ final class AgentRunner {
             makeProvider: { provider }, tools: tools, memory: memory, log: sink)
         let source = agent.source
 
+        // Hold the libraries folder's security scope for the whole run so the
+        // engine thread can read the `.js` files the agent imports.
+        let libraryRoot = libraries.resolvedFolder()
+        let didAccess = libraryRoot?.startAccessingSecurityScopedResource() ?? false
+
         Task {
+            defer { if didAccess { libraryRoot?.stopAccessingSecurityScopedResource() } }
             do {
-                let output = try await runtime.run(script: source, input: inputValue, timeout: 120)
+                let output = try await runtime.run(
+                    script: source, input: inputValue, timeout: 120, libraryRoot: libraryRoot)
                 result = output
                 state = .finished
             } catch {

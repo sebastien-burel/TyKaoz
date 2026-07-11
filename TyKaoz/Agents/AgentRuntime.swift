@@ -45,12 +45,22 @@ nonisolated final class AgentRuntime {
         self.log = log
     }
 
-    func run(script: String, input: Any? = nil, timeout: TimeInterval = 10) async throws -> String {
+    /// - Parameter libraryRoot: folder whose `.js` files the agent may `import`
+    ///   (already security-scope-accessed by the caller for the run's duration);
+    ///   nil disables library imports.
+    func run(
+        script: String,
+        input: Any? = nil,
+        timeout: TimeInterval = 10,
+        libraryRoot: URL? = nil
+    ) async throws -> String {
+        let resolver = ModuleResolver(entrySource: script, root: libraryRoot)
         let bridge = TyKaozHostBridge(
-            makeProvider: makeProvider, tools: tools, memory: memory, log: log)
+            makeProvider: makeProvider, tools: tools, memory: memory,
+            resolver: resolver, log: log)
         return try await withCheckedThrowingContinuation { continuation in
             let session = AgentSession(bridge: bridge, continuation: continuation)
-            session.start(script: script, input: input, timeout: timeout)
+            session.start(input: input, timeout: timeout)
         }
     }
 }
@@ -72,7 +82,7 @@ private nonisolated final class AgentSession {
         self.continuation = continuation
     }
 
-    func start(script: String, input: Any?, timeout: TimeInterval) {
+    func start(input: Any?, timeout: TimeInterval) {
         selfRef = self
 
         let timeoutItem = DispatchWorkItem { [weak self] in
@@ -95,7 +105,9 @@ private nonisolated final class AgentSession {
         self.engine = engine
 
         do {
-            _ = try engine.eval(script)
+            // The agent script is served to the engine as the `@agent` module
+            // (loaded by __runAgent's dynamic import), so it runs in module goal
+            // and can use static `import ... from`. We only kick off the run.
             let inputJSON = AgentJSON.string(input ?? NSNull())
             _ = try engine.eval("__runAgent(\(AgentJSON.jsLiteral(inputJSON)))")
         } catch let error as XSError {

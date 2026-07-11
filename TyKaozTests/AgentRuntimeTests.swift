@@ -74,6 +74,30 @@ struct AgentRuntimeTests {
         #expect(resultJSON.contains("Unknown tool"))
     }
 
+    /// The agent runs in module goal: it can `import ... from` a library file and
+    /// export `run` (the idiomatic contract).
+    @Test
+    func agentImportsLibraryModule() async throws {
+        let libs = FileManager.default.temporaryDirectory
+            .appending(path: "tykaoz-libs-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: libs, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: libs) }
+        try "export const greet = (name) => `Demat, ${name}!`;\n"
+            .write(to: libs.appending(path: "greet.js"), atomically: true, encoding: .utf8)
+
+        let memory = MemoryStore(fileURL: Self.tempURL())
+        let runtime = AgentRuntime(
+            makeProvider: { nil }, tools: ToolRegistry(tools: []), memory: memory)
+
+        let script = """
+        import { greet } from "./greet.js";
+        export async function run(input) { return greet(input.name); }
+        """
+        let resultJSON = try await runtime.run(
+            script: script, input: ["name": "Seb"], libraryRoot: libs)
+        #expect(resultJSON == "\"Demat, Seb!\"")
+    }
+
     /// XSBridgeKit invariant: every resolve/reject/onToken root is balanced and
     /// no async call is left pending once the work settles (no slot leak).
     @Test
@@ -82,7 +106,8 @@ struct AgentRuntimeTests {
         let bridge = TyKaozHostBridge(
             makeProvider: { MockProvider(events: [.textDelta("a"), .textDelta("b")]) },
             tools: ToolRegistry(tools: [EchoTool()]),
-            memory: memory)
+            memory: memory,
+            resolver: ModuleResolver(entrySource: "", root: nil))
         let engine = try #require(XSEngine(host: bridge))
 
         let metrics = try await Task.detached { () -> (Int, UInt32, UInt32) in
