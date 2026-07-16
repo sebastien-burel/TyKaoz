@@ -98,19 +98,90 @@ struct AgentRuntimeTests {
         #expect(resultJSON == "\"Demat, Seb!\"")
     }
 
-    /// XSBridgeKit invariant: every resolve/reject/onToken root is balanced and
-    /// no async call is left pending once the work settles (no slot leak).
+    /// The agent can advertise a subset of its tools to the model; the bridge
+    /// runs the tool loop natively (execute → feed result back → ask again) and
+    /// resolves `chat` with the final answer.
+    @Test
+    func chatAdvertisesToolsAndRunsToolLoop() async throws {
+        let memory = MemoryStore(fileURL: Self.tempURL())
+        // Round 1: the model calls `echo`; round 2: it answers using the result.
+        let rounds: [[StreamEvent]] = [
+            [.toolCall(id: "c1", name: "echo", argumentsJSON: #"{"text":"Seb"}"#)],
+            [.textDelta("Salut "), .textDelta("Seb")]
+        ]
+        let runtime = AgentRuntime(
+            makeProvider: { ScriptedProvider(rounds: rounds) },
+            tools: ToolRegistry(tools: [EchoTool()]),
+            memory: memory)
+
+        let script = """
+        globalThis.run = async function () {
+          return await host.llm.chat(
+            [{ role: "user", content: "dis bonjour" }],
+            { tools: ["echo"] });
+        };
+        """
+        let resultJSON = try await runtime.run(script: script)
+        #expect(resultJSON == "\"Salut Seb\"")
+    }
+
+    /// An unknown tool name is a typo — the bridge rejects it, catchable in JS.
+    @Test
+    func chatRejectsUnknownToolName() async throws {
+        let memory = MemoryStore(fileURL: Self.tempURL())
+        let runtime = AgentRuntime(
+            makeProvider: { MockProvider(events: [.textDelta("x")]) },
+            tools: ToolRegistry(tools: [EchoTool()]),
+            memory: memory)
+
+        let script = """
+        globalThis.run = async function () {
+          try { await host.llm.chat([{ role: "user", content: "hi" }], { tools: ["ghost"] }); return "no-throw"; }
+          catch (e) { return "caught:" + e; }
+        };
+        """
+        let resultJSON = try await runtime.run(script: script)
+        #expect(resultJSON.contains("caught:"))
+        #expect(resultJSON.contains("unknown tool: ghost"))
+    }
+
+    /// Back-compat: `chat(messages, onToken)` (function as second arg) still
+    /// streams and resolves without any tools involved.
+    @Test
+    func chatBackCompatOnTokenSecondArg() async throws {
+        let memory = MemoryStore(fileURL: Self.tempURL())
+        let runtime = AgentRuntime(
+            makeProvider: { MockProvider(events: [.textDelta("Bon"), .textDelta("jour")]) },
+            tools: ToolRegistry(tools: []),
+            memory: memory)
+
+        let script = """
+        globalThis.run = async function () {
+          let streamed = "";
+          const full = await host.llm.chat(
+            [{ role: "user", content: "hi" }], function (d) { streamed += d; });
+          return { full: full, streamed: streamed };
+        };
+        """
+        let resultJSON = try await runtime.run(script: script)
+        let result = try #require(Self.object(resultJSON))
+        #expect(result["full"] as? String == "Bonjour")
+        #expect(result["streamed"] as? String == "Bonjour")
+    }
+
+    /// After a batch of host calls settles, nothing is left pending (no leaked
+    /// in-flight call). The deeper remember/forget rooting balance is an
+    /// XSBridgeKit-internal invariant covered by its own suite.
     @Test
     func bridgeBalancesRootsAfterCalls() async throws {
         let memory = MemoryStore(fileURL: Self.tempURL())
-        let bridge = TyKaozHostBridge(
+        let host = TyKaozHost(
             makeProvider: { MockProvider(events: [.textDelta("a"), .textDelta("b")]) },
             tools: ToolRegistry(tools: [EchoTool()]),
-            memory: memory,
-            resolver: ModuleResolver(entrySource: "", root: nil))
-        let engine = try #require(XSEngine(host: bridge))
+            memory: memory)
+        let engine = try #require(XSEngine.tyKaoz(host: host))
 
-        let metrics = try await Task.detached { () -> (Int, UInt32, UInt32) in
+        let pending = try await Task.detached { () -> Int in
             _ = try engine.eval("""
             host.tool.call("echo", { text: "x" }).then(function (r) { globalThis.a = r; });
             host.llm.chat([{ role: "user", content: "hi" }], function () {})
@@ -118,12 +189,10 @@ struct AgentRuntimeTests {
             host.memory.save("t", "c").then(function (r) { globalThis.c = r; });
             """)
             engine.runUntilIdle(timeout: 5)
-            let counts = engine.rememberForgetCounts
-            return (engine.pendingCount, counts.0, counts.1)
+            return engine.pendingCount
         }.value
 
-        #expect(metrics.0 == 0)          // nothing pending
-        #expect(metrics.1 == metrics.2)  // remembered == forgotten
+        #expect(pending == 0)
     }
 
     // MARK: - Helpers
@@ -152,6 +221,32 @@ struct EchoTool: Tool {
     func execute(arguments: Data) async throws -> String {
         let args = try? JSONDecoder().decode(Args.self, from: arguments)
         return "echo:" + (args?.text ?? "")
+    }
+}
+
+/// LLMProvider that emits a different list of events on each successive
+/// `chat` call — one entry per tool-loop round. Exhausted rounds emit nothing
+/// (an empty finished stream), so a runaway loop terminates cleanly.
+private final class ScriptedProvider: LLMProvider, @unchecked Sendable {
+    let id = "scripted"
+    let displayName = "Scripted"
+    private let rounds: [[StreamEvent]]
+    private let lock = NSLock()
+    private var round = 0
+
+    init(rounds: [[StreamEvent]]) { self.rounds = rounds }
+
+    func availability() async -> ProviderAvailability { .ready }
+
+    func chat(messages: [ChatMessage], tools: [ToolSpec]) -> AsyncThrowingStream<StreamEvent, Error> {
+        lock.lock()
+        let events = round < rounds.count ? rounds[round] : []
+        round += 1
+        lock.unlock()
+        return AsyncThrowingStream { continuation in
+            for event in events { continuation.yield(event) }
+            continuation.finish()
+        }
     }
 }
 

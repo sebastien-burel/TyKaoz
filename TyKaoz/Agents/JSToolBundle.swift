@@ -8,11 +8,11 @@ import XSBridgeKit
 ///
 /// One persistent engine backs the whole bundle (shared by its tools). Tools
 /// can themselves reach the LLM, other tools and memory via `host.*`, since the
-/// bundle wires the same `TyKaozHostBridge`.
+/// bundle wires the same `TyKaozHost`.
 nonisolated final class JSToolBundle: @unchecked Sendable {
 
     private let engine: XSEngine
-    private let bridge: TyKaozHostBridge
+    private let host: TyKaozHost
     private let lock = NSLock()
     private var waiters: [String: (Result<String, Error>) -> Void] = [:]
 
@@ -26,11 +26,10 @@ nonisolated final class JSToolBundle: @unchecked Sendable {
         memory: MemoryStore,
         log: @escaping @Sendable (String) -> Void = { _ in }
     ) {
-        let bridge = TyKaozHostBridge(
-            makeProvider: makeProvider, tools: tools, memory: memory,
-            resolver: ModuleResolver(entrySource: "", root: nil), log: log)
-        guard let engine = XSEngine(host: bridge) else { return nil }
-        self.bridge = bridge
+        let host = TyKaozHost(
+            makeProvider: makeProvider, tools: tools, memory: memory, log: log)
+        guard let engine = XSEngine.tyKaoz(host: host) else { return nil }
+        self.host = host
         self.engine = engine
 
         do {
@@ -43,10 +42,7 @@ nonisolated final class JSToolBundle: @unchecked Sendable {
             return nil
         }
 
-        bridge.onControl = { [weak self] key, params in
-            guard key == "__toolResult" else { return }
-            self?.deliver(params)
-        }
+        host.onToolResult = { [weak self] params in self?.deliver(params) }
     }
 
     /// The native `Tool` wrappers for each declared tool.

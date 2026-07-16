@@ -19,13 +19,12 @@ enum AgentError: Error, LocalizedError {
     }
 }
 
-/// Runs a standalone JavaScript agent: a script that defines
-/// `async function run(input) { … }` and drives the LLM, tools and memory
-/// through `host.*`. One engine per run, torn down when the agent finishes.
-///
-/// The script's final value (or thrown error) is reported via the bridge's
-/// `__finish` / `__fail` control channel; `run` returns the result as a JSON
-/// string (e.g. a string result comes back JSON-quoted).
+/// Runs a standalone JavaScript agent: a module that exports
+/// `async function run(input)` (or `default`) and drives the LLM, tools and
+/// memory through `host.*`. One engine per run, torn down when the agent
+/// finishes. The agent's returned value is reported via `host.__report`
+/// (success) or `host.__fail` (throw/rejection); `run` returns it as a JSON
+/// string (a string result comes back JSON-quoted).
 nonisolated final class AgentRuntime {
 
     private let makeProvider: @Sendable () -> (any LLMProvider)?
@@ -46,39 +45,40 @@ nonisolated final class AgentRuntime {
     }
 
     /// - Parameter libraryRoot: folder whose `.js` files the agent may `import`
-    ///   (already security-scope-accessed by the caller for the run's duration);
-    ///   nil disables library imports.
+    ///   with explicit relative specifiers (`./util.js`); nil disables imports.
     func run(
         script: String,
         input: Any? = nil,
         timeout: TimeInterval = 10,
         libraryRoot: URL? = nil
     ) async throws -> String {
-        let resolver = ModuleResolver(entrySource: script, root: libraryRoot)
-        let bridge = TyKaozHostBridge(
-            makeProvider: makeProvider, tools: tools, memory: memory,
-            resolver: resolver, log: log)
+        let staging = try AgentModuleStaging(agentSource: script, libraryRoot: libraryRoot)
+        let host = TyKaozHost(
+            makeProvider: makeProvider, tools: tools, memory: memory, log: log)
         return try await withCheckedThrowingContinuation { continuation in
-            let session = AgentSession(bridge: bridge, continuation: continuation)
+            let session = AgentSession(host: host, staging: staging, continuation: continuation)
             session.start(input: input, timeout: timeout)
         }
     }
 }
 
-/// Owns one engine + bridge for the lifetime of a single agent run. Retains
+/// Owns one engine + host for the lifetime of a single agent run. Retains
 /// itself until the continuation is resumed, then releases the engine off the
 /// XS thread (its deinit joins that thread, so it must not run on it).
 private nonisolated final class AgentSession {
 
-    private let bridge: TyKaozHostBridge
+    private let host: TyKaozHost
+    private let staging: AgentModuleStaging
     private var engine: XSEngine?
     private var continuation: CheckedContinuation<String, Error>?
     private var selfRef: AgentSession?
     private var timeoutItem: DispatchWorkItem?
     private let lock = NSLock()
 
-    init(bridge: TyKaozHostBridge, continuation: CheckedContinuation<String, Error>) {
-        self.bridge = bridge
+    init(host: TyKaozHost, staging: AgentModuleStaging,
+         continuation: CheckedContinuation<String, Error>) {
+        self.host = host
+        self.staging = staging
         self.continuation = continuation
     }
 
@@ -90,26 +90,23 @@ private nonisolated final class AgentSession {
         }
         self.timeoutItem = timeoutItem
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-        bridge.onControl = { [weak self] key, params in
-            switch key {
-            case "__finish": self?.complete(.success(AgentSession.first(params)))
-            case "__fail":   self?.complete(.failure(AgentError.script(AgentSession.first(params))))
-            default:         break
-            }
-        }
 
-        guard let engine = XSEngine(host: bridge) else {
+        host.onReport = { [weak self] result in self?.complete(.success(result)) }
+        host.onFail = { [weak self] err in self?.complete(.failure(AgentError.script(err))) }
+
+        guard let engine = XSEngine.tyKaoz(host: host) else {
             complete(.failure(AgentError.engineCreationFailed))
             return
         }
         self.engine = engine
 
         do {
-            // The agent script is served to the engine as the `@agent` module
-            // (loaded by __runAgent's dynamic import), so it runs in module goal
-            // and can use static `import ... from`. We only kick off the run.
+            // The staged agent runs in module goal (dynamic import in __runAgent),
+            // so it can use static `import ... from`.
             let inputJSON = AgentJSON.string(input ?? NSNull())
-            _ = try engine.eval("__runAgent(\(AgentJSON.jsLiteral(inputJSON)))")
+            _ = try engine.eval(
+                "__runAgent(\(AgentJSON.jsLiteral(staging.agentPath)), "
+                + "\(AgentJSON.jsLiteral(inputJSON)))")
         } catch let error as XSError {
             complete(.failure(AgentError.evaluation(error.message)))
         } catch {
@@ -129,25 +126,23 @@ private nonisolated final class AgentSession {
         timeoutItem?.cancel()
         timeoutItem = nil
         continuation.resume(with: result)
-        bridge.onControl = nil
+        host.onReport = nil
+        host.onFail = nil
 
-        // Release the engine off the XS thread: its deinit stops and joins that
-        // thread, which would deadlock if we ran it on that thread (we may be on
-        // it now, when __finish fired). Drain the run loop first so the control
-        // call's own settle is applied before the machine is deleted, then drop
-        // the last reference on a global-queue thread.
+        let staging = self.staging
+        // Release the engine off the XS thread (its deinit joins that thread,
+        // which would deadlock if we're on it now — __report fires there). Drain
+        // the run loop so the reporting call settles before the machine is
+        // deleted, then drop the last reference and clean up the staging dir.
         if let engine {
             DispatchQueue.global().async {
                 engine.runUntilIdle(timeout: 2)
                 withExtendedLifetime(engine) {}
+                staging.cleanup()
             }
+        } else {
+            staging.cleanup()
         }
         selfRef = nil
-    }
-
-    /// The first param of a control call (the result/error JSON the prelude
-    /// produced with `JSON.stringify`); empty string if absent.
-    private static func first(_ params: [Any]) -> String {
-        (params.first as? String) ?? ""
     }
 }
