@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 /// Toolbar-sized menu that lets the user switch the active provider + model
 /// in one gesture, listing only the models they've enabled per provider.

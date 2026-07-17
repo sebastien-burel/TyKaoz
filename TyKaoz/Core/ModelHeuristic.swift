@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Pure heuristic that flags model IDs likely to be chat-capable, used to
 /// hide embedding / moderation / OCR / TTS variants from the curation list by

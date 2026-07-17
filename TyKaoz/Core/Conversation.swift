@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 struct Conversation: Identifiable, Hashable, Codable {
     let id: UUID

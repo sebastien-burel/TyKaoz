@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Generates a short title for a conversation by asking the active LLM to
 /// summarize the first user/assistant exchange. Used to auto-rename

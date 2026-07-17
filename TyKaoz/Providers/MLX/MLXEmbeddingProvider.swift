@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// `EmbeddingProvider` running bge-m3 (and friends) in-process on
 /// Apple Silicon via MLX-Swift. Phase A3: delegates to

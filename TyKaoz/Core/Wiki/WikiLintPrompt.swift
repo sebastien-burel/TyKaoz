@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Builds the LLM half of the wiki lint: a prompt embedding the SQL
 /// findings plus the semantic checks only a model can do (contradictions,

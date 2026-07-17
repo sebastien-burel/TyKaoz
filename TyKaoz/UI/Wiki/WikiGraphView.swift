@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 import GRDB
 
 /// Force-directed graph of the wiki. Edges are drawn via Canvas

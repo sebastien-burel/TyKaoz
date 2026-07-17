@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import FoundationModels
 
 struct AppleIntelligenceProvider: LLMProvider {

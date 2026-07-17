@@ -31,3 +31,4 @@ struct DictationDraft: Equatable {
         }
     }
 }
+import TyKaozKit

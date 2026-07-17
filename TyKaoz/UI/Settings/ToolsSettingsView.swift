@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 /// Lets the user switch individual built-in tools on or off. Disabled tools
 /// are never offered to the model.

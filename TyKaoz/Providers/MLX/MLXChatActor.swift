@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import MLX
 import MLXLMCommon
 import MLXLLM
@@ -57,7 +58,7 @@ actor MLXChatActor {
     /// we synthesise one so our agent loop can route results back).
     func chat(
         messages: [ChatMessage],
-        tools: [TyKaoz.ToolSpec]
+        tools: [TyKaozKit.ToolSpec]
     ) -> AsyncThrowingStream<StreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -1050,7 +1051,7 @@ actor MLXChatActor {
     /// Returns `nil` if the input JSON schema can't be parsed —
     /// those tools just don't get advertised to the model, rather
     /// than failing the whole turn.
-    private static func mapTool(_ spec: TyKaoz.ToolSpec) -> MLXLMCommon.ToolSpec? {
+    private static func mapTool(_ spec: TyKaozKit.ToolSpec) -> MLXLMCommon.ToolSpec? {
         guard let data = spec.inputSchemaJSON.data(using: .utf8),
               let parsed = try? JSONSerialization.jsonObject(with: data),
               let schema = parsed as? [String: Any]

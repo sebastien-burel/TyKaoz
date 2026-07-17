@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// `LLMProvider` running a chat model in-process on Apple Silicon
 /// via MLX-Swift. Mirrors `MLXEmbeddingProvider`'s shape: cheap +

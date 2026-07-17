@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 /// Inline, collapsible card for a tool invocation. Collapsed it shows the tool
 /// name and a status icon; expanded it reveals the JSON arguments and the

@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Domain types for the model catalog manifest (`models.json`, schema
 /// v2) published under the `TyKaoz/models-manifest` Hugging Face repo.

@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Wraps `Finder.search(_:)` and formats the result list as a compact
 /// markdown blob the agent can paste into its reasoning.

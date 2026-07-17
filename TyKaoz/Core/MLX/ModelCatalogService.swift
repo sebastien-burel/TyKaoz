@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import Observation
 
 /// Single source of truth for the MLX model catalog, driven by the

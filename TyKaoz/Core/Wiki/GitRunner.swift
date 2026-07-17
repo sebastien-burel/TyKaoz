@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Best-effort git wrapper for the wiki store. Decision Q2: every
 /// `write_wiki_page` records a commit so the user has an audit log

@@ -23,7 +23,7 @@
 		32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9BABC2FD2B403007412B7 /* MLXVLM */; };
 		32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984152FE17D62006447E9 /* XSBridgeKit */; };
 		32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984172FE17DA9006447E9 /* XSBridgeKit */; };
-		695BFB0EA846385C7E243BD8 /* TyKaozHostC in Frameworks */ = {isa = PBXBuildFile; productRef = 0FC4D1D1ECF21AFBF28151FA /* TyKaozHostC */; };
+		695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
 		8A755345605B0A106EAE548F /* XSBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8565D6148A9AAC2125F21780 /* XSBridge */; };
 		EAD7CC2D62BF4EC00F27EAAE /* BuildFile in Frameworks */ = {isa = PBXBuildFile; };
@@ -97,7 +97,7 @@
 				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
 				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
 				8A755345605B0A106EAE548F /* XSBridge in Frameworks */,
-				695BFB0EA846385C7E243BD8 /* TyKaozHostC in Frameworks */,
+				695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -184,7 +184,7 @@
 				32E984152FE17D62006447E9 /* XSBridgeKit */,
 				32D1C7A22FE9A00000000002 /* FluidAudio */,
 				8565D6148A9AAC2125F21780 /* XSBridge */,
-				0FC4D1D1ECF21AFBF28151FA /* TyKaozHostC */,
+				0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */,
 			);
 			productName = TyKaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TyKaoz.app */;
@@ -276,7 +276,7 @@
 				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "XSBridgeKit" */,
 				32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
-				5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozHostC" */,
+				5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -746,9 +746,9 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../XSBridgeKit;
 		};
-		5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozHostC" */ = {
+		5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozKit" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../TyKaozHostC;
+			relativePath = ../TyKaozKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -812,10 +812,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0FC4D1D1ECF21AFBF28151FA /* TyKaozHostC */ = {
+		0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozHostC" */;
-			productName = TyKaozHostC;
+			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "TyKaozKit" */;
+			productName = TyKaozKit;
 		};
 		326262872FC455B3001B46C0 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;

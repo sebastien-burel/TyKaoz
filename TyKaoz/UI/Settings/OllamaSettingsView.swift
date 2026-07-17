@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 struct OllamaSettingsView: View {
     @Environment(AppSettings.self) private var settings

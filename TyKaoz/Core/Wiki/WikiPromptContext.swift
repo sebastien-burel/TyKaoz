@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Builds the wiki preamble injected as system context on each send —
 /// the behavioral loop of the LLM-wiki pattern: without it the model has

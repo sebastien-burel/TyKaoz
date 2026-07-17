@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 struct DeepSeekSettingsView: View {
     @Environment(AppSettings.self) private var settings

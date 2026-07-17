@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 import GRDB
 
 /// Three-section diagnostic view backed by `Lint.run`. Each row

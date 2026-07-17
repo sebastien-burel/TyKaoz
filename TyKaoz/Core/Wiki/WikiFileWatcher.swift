@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import CoreServices
 
 /// Watches `wiki/` for filesystem changes (Obsidian saves, manual edits,
