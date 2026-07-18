@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKitMLX
 import TyKaozKit
 import MLX
 

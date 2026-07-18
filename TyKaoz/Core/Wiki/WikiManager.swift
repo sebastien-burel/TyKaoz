@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKitMLX
 import TyKaozKit
 import Observation
 

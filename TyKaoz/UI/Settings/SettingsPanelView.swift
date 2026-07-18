@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKitMLX
 import TyKaozKit
 
 /// Top-level Settings window. Sidebar lists providers; the detail pane shows

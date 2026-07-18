@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKitMLX
 import TyKaozKit
 
 /// Minimal Phase 7 surface for the Wiki LLM feature: master toggle,

@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKitMLX
 import TyKaozKit
 
 /// Toolbar-sized menu that lets the user switch the active provider + model
