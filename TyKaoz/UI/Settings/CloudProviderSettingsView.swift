@@ -51,7 +51,7 @@ struct CloudProviderSettingsView: View {
                 UseAsActiveButton(providerID: providerID)
             }
 
-            if [.anthropic, .openai, .mistral, .deepseek, .qwen, .zai, .localOpenAI]
+            if [.anthropic, .openai, .mistral, .deepseek, .qwen, .zai, .google, .localOpenAI]
                 .contains(providerID) {
                 Section("Implémentation") {
                     Toggle("Utiliser l'implémentation JavaScript",

@@ -52,6 +52,9 @@ enum ProviderFactory {
                   let model = settings.googleModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.google(apiKey: settings.googleAPIKey, model: model)
+            }
             return GoogleProvider(apiKey: settings.googleAPIKey, model: model)
 
         case "localOpenAI":
@@ -95,6 +98,9 @@ enum ProviderFactory {
                   let model = settings.selectedModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.ollama(model: model, baseURL: url.absoluteString)
+            }
             return OllamaProvider(baseURL: url, model: model)
 
         case "openai":
