@@ -12,6 +12,9 @@ enum ProviderFactory {
                   let model = settings.anthropicModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.anthropic(apiKey: settings.anthropicAPIKey, model: model)
+            }
             return AnthropicProvider(apiKey: settings.anthropicAPIKey, model: model)
 
         case "apple":
@@ -81,6 +84,9 @@ enum ProviderFactory {
                   let model = settings.openaiModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openai(apiKey: settings.openaiAPIKey, model: model)
+            }
             return OpenAIProvider(apiKey: settings.openaiAPIKey, model: model)
 
         case "qwen":

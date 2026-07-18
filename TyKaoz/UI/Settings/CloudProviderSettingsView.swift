@@ -20,6 +20,7 @@ struct CloudProviderSettingsView: View {
     @State private var state: SettingsConnectionState = .idle
 
     var body: some View {
+        @Bindable var settings = settings
         Form {
             Section("Authentification") {
                 SecureField("Clé API", text: $apiKey, prompt: Text(keyPlaceholder))
@@ -48,6 +49,17 @@ struct CloudProviderSettingsView: View {
 
             Section {
                 UseAsActiveButton(providerID: providerID)
+            }
+
+            if providerID == .anthropic || providerID == .openai {
+                Section("Implémentation") {
+                    Toggle("Utiliser l'implémentation JavaScript",
+                           isOn: $settings.useJSProviders)
+                    Text("Le provider tourne dans le moteur XS (XMLHttpRequest natif) "
+                         + "au lieu du code Swift. Comportement identique côté chat.")
+                        .font(Brand.Fonts.body(11))
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .formStyle(.grouped)

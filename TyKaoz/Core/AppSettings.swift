@@ -10,6 +10,13 @@ final class AppSettings {
         didSet { defaults.set(selectedProviderID, forKey: Keys.selectedProvider) }
     }
 
+    /// Use the JavaScript implementations of the HTTP providers (Anthropic /
+    /// OpenAI) — running in an XS engine over the native XMLHttpRequest — instead
+    /// of the Swift ones. Same behaviour for the UI (both are `LLMProvider`).
+    var useJSProviders: Bool {
+        didSet { defaults.set(useJSProviders, forKey: Keys.useJSProviders) }
+    }
+
     /// Speech-to-text engine for prompt dictation: "apple" (system
     /// dictation, default) or "parakeet" (local Parakeet V3 model).
     var transcriptionEngineID: String {
@@ -574,6 +581,7 @@ final class AppSettings {
         self.disabledTools = Set(defaults.array(forKey: Keys.disabledTools) as? [String] ?? [])
         self.appleEnabledTools = Set(defaults.array(forKey: Keys.appleEnabledTools) as? [String] ?? [])
         self.braveAPIKey = KeychainStore.get(account: KeychainAccounts.braveAPIKey) ?? ""
+        self.useJSProviders = defaults.bool(forKey: Keys.useJSProviders)
         self.wikiEnabled = defaults.bool(forKey: Keys.wikiEnabled)
         // Default-true: absent key means enabled.
         self.wikiContextEnabled = defaults.object(forKey: Keys.wikiContextEnabled) as? Bool ?? true
@@ -594,6 +602,7 @@ final class AppSettings {
 
     private enum Keys {
         static let selectedProvider = "providers.selected"
+        static let useJSProviders = "providers.useJS"
         static let transcriptionEngineID = "dictation.engineID"
         static let serverURL = "ollama.serverURL"
         static let selectedModel = "ollama.selectedModel"
