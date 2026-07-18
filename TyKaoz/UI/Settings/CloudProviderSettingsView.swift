@@ -51,7 +51,8 @@ struct CloudProviderSettingsView: View {
                 UseAsActiveButton(providerID: providerID)
             }
 
-            if providerID == .anthropic || providerID == .openai {
+            if [.anthropic, .openai, .mistral, .deepseek, .qwen, .zai, .localOpenAI]
+                .contains(providerID) {
                 Section("Implémentation") {
                     Toggle("Utiliser l'implémentation JavaScript",
                            isOn: $settings.useJSProviders)
