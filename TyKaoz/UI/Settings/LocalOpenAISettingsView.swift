@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 /// Settings for the generic OpenAI-compatible local provider. Covers
 /// vLLM (`/v1/...`), LM Studio, llama.cpp's `server`, anything that
@@ -64,6 +65,15 @@ struct LocalOpenAISettingsView: View {
 
             Section {
                 UseAsActiveButton(providerID: .localOpenAI)
+            }
+
+            Section("Implémentation") {
+                Toggle("Utiliser l'implémentation JavaScript",
+                       isOn: $settings.useJSProviders)
+                Text("Le provider tourne dans le moteur XS (XMLHttpRequest natif) "
+                     + "au lieu du code Swift. Comportement identique côté chat.")
+                    .font(Brand.Fonts.body(11))
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

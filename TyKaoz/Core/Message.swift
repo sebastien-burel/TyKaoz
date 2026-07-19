@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 struct Message: Identifiable, Hashable, Codable {
     enum Role: String, Hashable, Codable {

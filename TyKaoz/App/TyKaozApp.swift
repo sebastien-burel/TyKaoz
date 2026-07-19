@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKitMLX
 
 @main
 struct TyKaozApp: App {

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		326262882FC455B3001B46C0 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 326262872FC455B3001B46C0 /* MarkdownUI */; };
+		329490EE300B703100FA05C1 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = 32D1C7A22FE9A00000000002 /* FluidAudio */; };
 		32B9B9192FD28D96007412B7 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9182FD28D96007412B7 /* MLX */; };
 		32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B91A2FD28D96007412B7 /* MLXFast */; };
 		32B9B91D2FD28D96007412B7 /* MLXLinalg in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B91C2FD28D96007412B7 /* MLXLinalg */; };
@@ -22,7 +23,10 @@
 		32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9BABC2FD2B403007412B7 /* MLXVLM */; };
 		32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984152FE17D62006447E9 /* XSBridgeKit */; };
 		32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984172FE17DA9006447E9 /* XSBridgeKit */; };
+		695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */; };
+		AABBCCDD11110000EEEE00B1 /* TyKaozKitMLX in Frameworks */ = {isa = PBXBuildFile; productRef = AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
+		8A755345605B0A106EAE548F /* XSBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8565D6148A9AAC2125F21780 /* XSBridge */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +75,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				329490EE300B703100FA05C1 /* FluidAudio in Frameworks */,
 				32B9B9282FD28DE8007412B7 /* MLXLMCommon in Frameworks */,
 				32B9B9262FD28DE8007412B7 /* MLXLLM in Frameworks */,
 				32B9B9242FD28DE8007412B7 /* MLXEmbedders in Frameworks */,
@@ -86,6 +91,9 @@
 				32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */,
 				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
 				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
+				8A755345605B0A106EAE548F /* XSBridge in Frameworks */,
+				695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */,
+				AABBCCDD11110000EEEE00B1 /* TyKaozKitMLX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -171,6 +179,9 @@
 				32B9BABC2FD2B403007412B7 /* MLXVLM */,
 				32E984152FE17D62006447E9 /* XSBridgeKit */,
 				32D1C7A22FE9A00000000002 /* FluidAudio */,
+				8565D6148A9AAC2125F21780 /* XSBridge */,
+				0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */,
+				AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */,
 			);
 			productName = TyKaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TyKaoz.app */;
@@ -217,8 +228,6 @@
 				32DEB2202FC2F85600BA1D98 /* TyKaozUITests */,
 			);
 			name = TyKaozUITests;
-			packageProductDependencies = (
-			);
 			productName = TyKaozUITests;
 			productReference = 32DEB21D2FC2F85600BA1D98 /* TyKaozUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -264,6 +273,7 @@
 				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */,
 				32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
+				5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -733,6 +743,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../XSBridgeKit;
 		};
+		5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../TyKaozKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -776,14 +790,6 @@
 				minimumVersion = 1.3.3;
 			};
 		};
-		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/groue/GRDB.swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 7.0.0;
-			};
-		};
 		32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/FluidInference/FluidAudio";
@@ -792,13 +798,26 @@
 				minimumVersion = 0.12.0;
 			};
 		};
+		7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		32D1C7A22FE9A00000000002 /* FluidAudio */ = {
+		0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
-			productName = FluidAudio;
+			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */;
+			productName = TyKaozKit;
+		};
+		AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */;
+			productName = TyKaozKitMLX;
 		};
 		326262872FC455B3001B46C0 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -865,6 +884,11 @@
 			package = 32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXVLM;
 		};
+		32D1C7A22FE9A00000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
 		32E984152FE17D62006447E9 /* XSBridgeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = XSBridgeKit;
@@ -878,6 +902,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		8565D6148A9AAC2125F21780 /* XSBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */;
+			productName = XSBridge;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

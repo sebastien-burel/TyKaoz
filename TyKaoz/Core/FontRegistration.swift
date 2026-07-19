@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import CoreText
 
 /// Registers any .ttf/.otf font shipped in the app bundle with the system

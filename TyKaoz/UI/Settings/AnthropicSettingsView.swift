@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 
 struct AnthropicSettingsView: View {
     @Environment(AppSettings.self) private var settings

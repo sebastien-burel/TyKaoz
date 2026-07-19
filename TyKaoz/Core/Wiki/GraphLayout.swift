@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import CoreGraphics
 
 /// Pure force-directed layout of a small graph. Eades-style spring

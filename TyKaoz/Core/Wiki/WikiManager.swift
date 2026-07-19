@@ -1,4 +1,6 @@
 import Foundation
+import TyKaozKitMLX
+import TyKaozKit
 import Observation
 
 /// Lifecycle owner for the wiki feature. Bridges `AppSettings` to a

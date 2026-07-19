@@ -1,4 +1,5 @@
 import AVFAudio
+import TyKaozKit
 
 /// Captures the default input device and streams 16 kHz mono Float32
 /// chunks — the least common denominator both engines consume (Parakeet

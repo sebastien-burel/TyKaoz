@@ -1,4 +1,6 @@
 import Foundation
+import TyKaozKitMLX
+import TyKaozKit
 
 enum ProviderFactory {
     static func make(
@@ -11,6 +13,9 @@ enum ProviderFactory {
                   let model = settings.anthropicModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.anthropic(apiKey: settings.anthropicAPIKey, model: model)
+            }
             return AnthropicProvider(apiKey: settings.anthropicAPIKey, model: model)
 
         case "apple":
@@ -35,6 +40,12 @@ enum ProviderFactory {
                   let model = settings.deepseekModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openaiCompatible(
+                    id: "deepseek-js", displayName: "DeepSeek (JS)",
+                    apiKey: settings.deepseekAPIKey, model: model,
+                    baseURL: DeepSeekProvider.baseURL.absoluteString)
+            }
             return DeepSeekProvider(apiKey: settings.deepseekAPIKey, model: model)
 
         case "google":
@@ -42,6 +53,9 @@ enum ProviderFactory {
                   let model = settings.googleModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.google(apiKey: settings.googleAPIKey, model: model)
+            }
             return GoogleProvider(apiKey: settings.googleAPIKey, model: model)
 
         case "localOpenAI":
@@ -49,6 +63,12 @@ enum ProviderFactory {
                   let model = settings.localOpenAIModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openaiCompatible(
+                    id: "localOpenAI-js", displayName: "Serveur local (JS)",
+                    apiKey: settings.localOpenAIAPIKey, model: model,
+                    baseURL: LocalOpenAIProvider.normalize(url).absoluteString)
+            }
             return LocalOpenAIProvider(
                 baseURL: url,
                 apiKey: settings.localOpenAIAPIKey,
@@ -66,6 +86,12 @@ enum ProviderFactory {
                   let model = settings.mistralModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openaiCompatible(
+                    id: "mistral-js", displayName: "Mistral (JS)",
+                    apiKey: settings.mistralAPIKey, model: model,
+                    baseURL: MistralProvider.baseURL.absoluteString)
+            }
             return MistralProvider(apiKey: settings.mistralAPIKey, model: model)
 
         case "ollama":
@@ -73,6 +99,9 @@ enum ProviderFactory {
                   let model = settings.selectedModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.ollama(model: model, baseURL: url.absoluteString)
+            }
             return OllamaProvider(baseURL: url, model: model)
 
         case "openai":
@@ -80,6 +109,9 @@ enum ProviderFactory {
                   let model = settings.openaiModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openai(apiKey: settings.openaiAPIKey, model: model)
+            }
             return OpenAIProvider(apiKey: settings.openaiAPIKey, model: model)
 
         case "qwen":
@@ -87,6 +119,12 @@ enum ProviderFactory {
                   let model = settings.qwenModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openaiCompatible(
+                    id: "qwen-js", displayName: "Qwen (JS)",
+                    apiKey: settings.qwenAPIKey, model: model,
+                    baseURL: QwenProvider.baseURL.absoluteString)
+            }
             return QwenProvider(apiKey: settings.qwenAPIKey, model: model)
 
         case "zai":
@@ -94,6 +132,12 @@ enum ProviderFactory {
                   let model = settings.zaiModel,
                   !model.isEmpty
             else { return nil }
+            if settings.useJSProviders {
+                return JSProviders.openaiCompatible(
+                    id: "zai-js", displayName: "Z.AI (JS)",
+                    apiKey: settings.zaiAPIKey, model: model,
+                    baseURL: ZAIProvider.baseURL.absoluteString)
+            }
             return ZAIProvider(apiKey: settings.zaiAPIKey, model: model)
 
         default:

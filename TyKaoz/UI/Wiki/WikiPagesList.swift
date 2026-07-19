@@ -1,4 +1,5 @@
 import SwiftUI
+import TyKaozKit
 import GRDB
 
 /// Sidebar with a search field on top: empty query → full page list

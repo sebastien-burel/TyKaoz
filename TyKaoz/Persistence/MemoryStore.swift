@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import Observation
 
 /// Owns the assistant's pinned preferences about the user — small, stable
@@ -8,7 +9,7 @@ import Observation
 /// and injected into the chat system prompt.
 @Observable
 @MainActor
-final class MemoryStore {
+final class MemoryStore: MemoryStoring {
     private(set) var memories: [Memory] = []
 
     @ObservationIgnored private let fileURL: URL

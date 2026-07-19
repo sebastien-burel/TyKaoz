@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Shared slug maker for wiki page ids and raw-source filenames.
 enum Slug {

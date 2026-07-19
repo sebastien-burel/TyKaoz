@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 import GRDB
 
 /// One retrieval hit. Seed pages carry the actual matched chunk as

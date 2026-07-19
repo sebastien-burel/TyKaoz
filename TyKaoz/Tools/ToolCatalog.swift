@@ -1,4 +1,5 @@
 import Foundation
+import TyKaozKit
 
 /// Single source of truth for the built-in tools. ContentView builds the live
 /// registry from here; the settings UI reads the same name list to offer
