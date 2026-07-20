@@ -156,6 +156,7 @@ struct ChatView: View {
         switch providerID {
         case "anthropic": return settings.anthropicModel
         case "deepseek":  return settings.deepseekModel
+        case "kimi":      return settings.kimiModel
         case "google":    return settings.googleModel
         case "localOpenAI": return settings.localOpenAIModel
         case "mlx":       return settings.mlxChatModelID
@@ -445,6 +446,7 @@ struct ChatView: View {
             case "apple":     return "Apple Intelligence indisponible — voir les réglages."
             case "comfyui":   return "Configurez l'URL de votre serveur ComfyUI et ajoutez un workflow…"
             case "deepseek":  return "Renseignez votre clé DeepSeek et choisissez un modèle…"
+            case "kimi":      return "Renseignez votre clé Kimi (Moonshot) et choisissez un modèle…"
             case "google":    return "Renseignez votre clé Google AI Studio et choisissez un modèle…"
             case "localOpenAI": return "Configurez l'URL de votre serveur (vLLM, LM Studio, llama.cpp) et choisissez un modèle…"
             case "mlx":       return "Choisis un modèle dans Réglages → Sur ce Mac et télécharge-le."

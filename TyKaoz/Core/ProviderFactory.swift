@@ -58,6 +58,14 @@ enum ProviderFactory {
             }
             return GoogleProvider(apiKey: settings.googleAPIKey, model: model)
 
+        case "kimi":
+            // OpenAI-compatible — JS-only (no Swift Kimi provider).
+            guard !settings.kimiAPIKey.isEmpty,
+                  let model = settings.kimiModel,
+                  !model.isEmpty
+            else { return nil }
+            return JSProviders.kimi(apiKey: settings.kimiAPIKey, model: model)
+
         case "localOpenAI":
             guard let url = settings.localOpenAIBaseURL,
                   let model = settings.localOpenAIModel,

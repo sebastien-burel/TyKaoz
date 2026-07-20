@@ -29,7 +29,7 @@ enum ModelHeuristic {
             return true
         }
         switch provider {
-        case .ollama, .mistral, .openai, .anthropic, .google, .deepseek, .qwen, .zai, .localOpenAI, .mlx:
+        case .ollama, .mistral, .openai, .anthropic, .google, .deepseek, .kimi, .qwen, .zai, .localOpenAI, .mlx:
             return !nonChatHints.contains(where: lower.contains)
         case .apple, .comfyui:
             // Apple has one model; ComfyUI "models" are user-named workflows —

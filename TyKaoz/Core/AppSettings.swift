@@ -43,6 +43,16 @@ final class AppSettings {
         didSet { defaults.set(deepseekModel, forKey: Keys.deepseekModel) }
     }
 
+    // MARK: - Kimi (Moonshot AI)
+
+    var kimiAPIKey: String {
+        didSet { KeychainStore.set(kimiAPIKey, account: KeychainAccounts.kimiAPIKey) }
+    }
+
+    var kimiModel: String? {
+        didSet { defaults.set(kimiModel, forKey: Keys.kimiModel) }
+    }
+
     // MARK: - Google
 
     var googleAPIKey: String {
@@ -227,6 +237,10 @@ final class AppSettings {
         didSet { defaults.set(deepseekCatalog, forKey: Keys.catalog(.deepseek)) }
     }
 
+    var kimiCatalog: [String] = [] {
+        didSet { defaults.set(kimiCatalog, forKey: Keys.catalog(.kimi)) }
+    }
+
     var googleCatalog: [String] = [] {
         didSet { defaults.set(googleCatalog, forKey: Keys.catalog(.google)) }
     }
@@ -262,6 +276,7 @@ final class AppSettings {
         case .comfyui:      return comfyuiWorkflows.keys.sorted()
         case .deepseek:     return deepseekCatalog
         case .google:       return googleCatalog
+        case .kimi:         return kimiCatalog
         case .localOpenAI:  return localOpenAICatalog
         case .mistral:      return mistralCatalog
         case .mlx:          return []
@@ -283,6 +298,7 @@ final class AppSettings {
         case .comfyui:      break   // workflows are managed directly, not fetched
         case .deepseek:     deepseekCatalog = ids
         case .google:       googleCatalog = ids
+        case .kimi:         kimiCatalog = ids
         case .localOpenAI:  localOpenAICatalog = ids
         case .mistral:      mistralCatalog = ids
         case .mlx:          break
@@ -316,6 +332,10 @@ final class AppSettings {
         didSet { defaults.set(Array(enabledGoogleModels), forKey: Keys.enabledModels(for: .google)) }
     }
 
+    var enabledKimiModels: Set<String> = [] {
+        didSet { defaults.set(Array(enabledKimiModels), forKey: Keys.enabledModels(for: .kimi)) }
+    }
+
     var enabledLocalOpenAIModels: Set<String> = [] {
         didSet { defaults.set(Array(enabledLocalOpenAIModels), forKey: Keys.enabledModels(for: .localOpenAI)) }
     }
@@ -347,6 +367,7 @@ final class AppSettings {
         case .comfyui:      return Set(comfyuiWorkflows.keys)
         case .deepseek:     return enabledDeepSeekModels
         case .google:       return enabledGoogleModels
+        case .kimi:         return enabledKimiModels
         case .localOpenAI:  return enabledLocalOpenAIModels
         case .mistral:      return enabledMistralModels
         case .mlx:          return []
@@ -374,6 +395,9 @@ final class AppSettings {
         case .google:
             if enabled { enabledGoogleModels.insert(modelID) } else { enabledGoogleModels.remove(modelID) }
             constrainActive(&googleModel, to: enabledGoogleModels)
+        case .kimi:
+            if enabled { enabledKimiModels.insert(modelID) } else { enabledKimiModels.remove(modelID) }
+            constrainActive(&kimiModel, to: enabledKimiModels)
         case .localOpenAI:
             if enabled { enabledLocalOpenAIModels.insert(modelID) } else { enabledLocalOpenAIModels.remove(modelID) }
             constrainActive(&localOpenAIModel, to: enabledLocalOpenAIModels)
@@ -540,6 +564,8 @@ final class AppSettings {
         self.anthropicModel = defaults.string(forKey: Keys.anthropicModel)
         self.deepseekAPIKey = KeychainStore.get(account: KeychainAccounts.deepseekAPIKey) ?? ""
         self.deepseekModel = defaults.string(forKey: Keys.deepseekModel)
+        self.kimiAPIKey = KeychainStore.get(account: KeychainAccounts.kimiAPIKey) ?? ""
+        self.kimiModel = defaults.string(forKey: Keys.kimiModel)
         self.googleAPIKey = KeychainStore.get(account: KeychainAccounts.googleAPIKey) ?? ""
         self.googleModel = defaults.string(forKey: Keys.googleModel)
         self.localOpenAIBaseURLString = defaults.string(forKey: Keys.localOpenAIBaseURL) ?? ""
@@ -562,6 +588,7 @@ final class AppSettings {
         self.comfyuiWorkflowParams = defaults.dictionary(forKey: Keys.comfyuiWorkflowParams) as? [String: [String: String]] ?? [:]
         self.anthropicCatalog = defaults.array(forKey: Keys.catalog(.anthropic)) as? [String] ?? []
         self.deepseekCatalog = defaults.array(forKey: Keys.catalog(.deepseek)) as? [String] ?? []
+        self.kimiCatalog = defaults.array(forKey: Keys.catalog(.kimi)) as? [String] ?? []
         self.googleCatalog = defaults.array(forKey: Keys.catalog(.google)) as? [String] ?? []
         self.localOpenAICatalog = defaults.array(forKey: Keys.catalog(.localOpenAI)) as? [String] ?? []
         self.mistralCatalog = defaults.array(forKey: Keys.catalog(.mistral)) as? [String] ?? []
@@ -571,6 +598,7 @@ final class AppSettings {
         self.zaiCatalog = defaults.array(forKey: Keys.catalog(.zai)) as? [String] ?? []
         self.enabledAnthropicModels = Set(defaults.array(forKey: Keys.enabledModels(for: .anthropic)) as? [String] ?? [])
         self.enabledDeepSeekModels = Set(defaults.array(forKey: Keys.enabledModels(for: .deepseek)) as? [String] ?? [])
+        self.enabledKimiModels = Set(defaults.array(forKey: Keys.enabledModels(for: .kimi)) as? [String] ?? [])
         self.enabledGoogleModels = Set(defaults.array(forKey: Keys.enabledModels(for: .google)) as? [String] ?? [])
         self.enabledLocalOpenAIModels = Set(defaults.array(forKey: Keys.enabledModels(for: .localOpenAI)) as? [String] ?? [])
         self.enabledMistralModels = Set(defaults.array(forKey: Keys.enabledModels(for: .mistral)) as? [String] ?? [])
@@ -608,6 +636,7 @@ final class AppSettings {
         static let selectedModel = "ollama.selectedModel"
         static let anthropicModel = "anthropic.selectedModel"
         static let deepseekModel = "deepseek.selectedModel"
+        static let kimiModel = "kimi.selectedModel"
         static let googleModel = "google.selectedModel"
         static let localOpenAIBaseURL = "localOpenAI.baseURL"
         static let localOpenAIModel = "localOpenAI.selectedModel"
@@ -642,6 +671,7 @@ final class AppSettings {
     private enum KeychainAccounts {
         static let anthropicAPIKey = "anthropic.apiKey"
         static let deepseekAPIKey = "deepseek.apiKey"
+        static let kimiAPIKey = "kimi.apiKey"
         static let googleAPIKey = "google.apiKey"
         static let localOpenAIAPIKey = "localOpenAI.apiKey"
         static let mistralAPIKey = "mistral.apiKey"

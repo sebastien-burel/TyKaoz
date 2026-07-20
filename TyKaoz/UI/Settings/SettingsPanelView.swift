@@ -36,6 +36,7 @@ struct SettingsPanelView: View {
         case .provider(.comfyui):   ComfyUISettingsView()
         case .provider(.deepseek):  DeepSeekSettingsView()
         case .provider(.google):    GoogleSettingsView()
+        case .provider(.kimi):      KimiSettingsView()
         case .provider(.localOpenAI): LocalOpenAISettingsView()
         case .provider(.mistral):   MistralSettingsView()
         case .provider(.mlx):       MLXSettingsView()
@@ -183,6 +184,9 @@ private struct ProvidersSidebar: View {
         case .google:
             return (!settings.googleAPIKey.isEmpty && settings.googleModel?.isEmpty == false)
                 ? .green : .gray
+        case .kimi:
+            return (!settings.kimiAPIKey.isEmpty && settings.kimiModel?.isEmpty == false)
+                ? .green : .gray
         case .localOpenAI:
             return (settings.localOpenAIBaseURL != nil && settings.localOpenAIModel?.isEmpty == false)
                 ? .green : .gray
@@ -224,6 +228,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
     case comfyui
     case deepseek
     case google
+    case kimi
     case localOpenAI
     case mistral
     case mlx
@@ -241,6 +246,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case "comfyui":     self = .comfyui
         case "deepseek":    self = .deepseek
         case "google":      self = .google
+        case "kimi":        self = .kimi
         case "localOpenAI": self = .localOpenAI
         case "mistral":     self = .mistral
         case "mlx":         self = .mlx
@@ -259,6 +265,7 @@ enum ProviderID: String, CaseIterable, Identifiable, Hashable {
         case .comfyui:      return "ComfyUI"
         case .deepseek:     return "DeepSeek"
         case .google:       return "Google Gemini"
+        case .kimi:         return "Kimi (Moonshot)"
         case .localOpenAI:  return "Compatible OpenAI"
         case .mistral:      return "Mistral"
         case .mlx:          return "Sur ce Mac"
