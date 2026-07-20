@@ -39,11 +39,10 @@ enum ToolCatalog {
         braveAPIKey: String,
         wikiContext: WikiContext? = nil
     ) -> [any Tool] {
+        // Native (OS-bound) tools stay in Swift; the HTTP / pure tools
+        // (current_datetime, fetch_url, web_search) are JS modules.
         var tools: [any Tool] = [
-            CurrentDateTimeTool(),
             CurrentLocationTool(),
-            FetchURLTool(),
-            BraveSearchTool(apiKey: braveAPIKey),
             ListDirectoryTool(roots: roots),
             ReadFileTool(roots: roots),
             GrepFilesTool(roots: roots),
@@ -51,6 +50,9 @@ enum ToolCatalog {
             ListMemoriesTool(store: memory),
             ReadMemoryTool(store: memory)
         ]
+        if let jsTools = JSTools.bundle(braveAPIKey: braveAPIKey, memory: memory) {
+            tools.append(contentsOf: jsTools.tools())
+        }
         if let wikiContext {
             tools.append(contentsOf: [
                 SearchWikiTool(context: wikiContext),
