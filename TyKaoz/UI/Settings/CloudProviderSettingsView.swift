@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 
 /// Shared layout for any cloud-style provider settings panel (API key in
 /// Keychain + connection test + model curation + active-provider button).

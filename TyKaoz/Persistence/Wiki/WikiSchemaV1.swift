@@ -1,5 +1,4 @@
 import Foundation
-import TyKaozKit
 import GRDB
 
 /// First migration — the schema defined in PLAN_TYKAOZ_WIKI.md.

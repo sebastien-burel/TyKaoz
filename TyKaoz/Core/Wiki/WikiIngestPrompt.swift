@@ -1,5 +1,4 @@
 import Foundation
-import TyKaozKit
 
 /// The ingest instruction sent through the normal chat loop when the user
 /// asks to wikify a source. Scope is capped at a few pages — Karpathy's

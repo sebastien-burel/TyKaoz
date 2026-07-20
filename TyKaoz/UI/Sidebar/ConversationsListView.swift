@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 
 struct ConversationsListView: View {
     @Environment(ConversationStore.self) private var store

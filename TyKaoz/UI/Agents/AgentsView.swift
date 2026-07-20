@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 import UniformTypeIdentifiers
 
 /// The Agents window: a sidebar list of JavaScript agents, an editor for the

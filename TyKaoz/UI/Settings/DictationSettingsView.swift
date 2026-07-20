@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 
 /// Settings pane for prompt dictation: engine choice (Apple system
 /// dictation vs local Parakeet V3) and per-engine model installation.

@@ -1,6 +1,5 @@
 import SwiftUI
 import TyKaozKitMLX
-import TyKaozKit
 import MLX
 
 /// Provider-side settings panel for MLX. Lists curated embedding

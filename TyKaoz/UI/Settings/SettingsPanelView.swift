@@ -1,6 +1,6 @@
 import SwiftUI
-import TyKaozKitMLX
 import TyKaozKit
+import TyKaozKitMLX
 
 /// Top-level Settings window. Sidebar lists providers; the detail pane shows
 /// the selected provider's configuration. Scales to N providers without

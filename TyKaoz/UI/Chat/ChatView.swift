@@ -1,6 +1,6 @@
 import SwiftUI
-import TyKaozKitMLX
 import TyKaozKit
+import TyKaozKitMLX
 import MarkdownUI
 import UniformTypeIdentifiers
 

@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 
 enum Brand {
     enum Colors {

@@ -1,5 +1,4 @@
 import Foundation
-import TyKaozKit
 
 /// Deterministic generator for `wiki/index.md` — the content catalog the
 /// model reads to know what the wiki contains (Karpathy's LLM-wiki pattern).

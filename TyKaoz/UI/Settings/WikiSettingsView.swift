@@ -1,6 +1,6 @@
 import SwiftUI
-import TyKaozKitMLX
 import TyKaozKit
+import TyKaozKitMLX
 
 /// Minimal Phase 7 surface for the Wiki LLM feature: master toggle,
 /// status line, embedding model + dimension, manual re-index button.

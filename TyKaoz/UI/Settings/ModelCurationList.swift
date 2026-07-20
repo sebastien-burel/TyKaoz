@@ -1,5 +1,4 @@
 import SwiftUI
-import TyKaozKit
 
 /// Compact "Modèles" section shown in every per-provider panel: the active
 /// model picker (limited to enabled models) + a small summary line + a

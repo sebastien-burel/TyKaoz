@@ -1,6 +1,6 @@
 import Foundation
-import TyKaozKitMLX
 import TyKaozKit
+import TyKaozKitMLX
 
 enum ProviderFactory {
     static func make(

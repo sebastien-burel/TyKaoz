@@ -1,5 +1,4 @@
 import Foundation
-import TyKaozKit
 
 /// Append-only operations journal (`wiki/log.md`) — the second special
 /// file of the LLM-wiki pattern. Written deterministically by the app

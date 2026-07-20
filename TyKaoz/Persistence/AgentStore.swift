@@ -1,5 +1,4 @@
 import Foundation
-import TyKaozKit
 import Observation
 
 /// A JavaScript agent the user can edit and run. Persisted so it survives
