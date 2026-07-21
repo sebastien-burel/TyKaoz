@@ -49,7 +49,9 @@ struct FileSpacesSettingsView: View {
             Text("""
             Les outils de fichiers (lister, lire, rechercher) ne peuvent accéder \
             qu'aux dossiers ajoutés ici. L'accès est en lecture seule et reste \
-            actif d'une session à l'autre.
+            actif d'une session à l'autre. Active « Import » sur un dossier pour \
+            autoriser en plus les agents à y importer du code \
+            (import "dossier/module") — désactivé par défaut.
             """)
                 .font(Brand.Fonts.body(12))
                 .foregroundStyle(.secondary)
@@ -81,6 +83,18 @@ struct FileSpacesSettingsView: View {
                         .font(Brand.Fonts.body(13))
                         .foregroundStyle(Brand.Colors.ink)
                     Spacer()
+                    Toggle(isOn: Binding(
+                        get: { space.importable },
+                        set: { store.setImportable(id: space.id, $0) }
+                    )) {
+                        Text("Import")
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .help("Autoriser les agents à importer du code depuis ce dossier "
+                        + "(import \"\(space.name)/module\")")
                     if let url = store.url(for: space) {
                         Button {
                             // Sandbox: the folder lives outside our container,
