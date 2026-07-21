@@ -48,16 +48,28 @@ final class AgentRunner {
             makeProvider: { provider }, tools: tools, memory: memory, log: sink)
         let source = agent.source
 
-        // Hold the libraries folder's security scope for the whole run so the
-        // engine thread can read the `.js` files the agent imports.
-        let libraryRoot = libraries.resolvedFolder()
-        let didAccess = libraryRoot?.startAccessingSecurityScopedResource() ?? false
+        // Module roots (Moddable-style): the agent imports bare specifiers
+        // straight from real folders — the library folder is the default root
+        // (`import "util"`), and each file space is a named root by its folder
+        // name (`import "space/util"`). Nothing is copied. Hold every folder's
+        // security scope for the whole run so the engine thread can read them.
+        var moduleRoots: [(prefix: String, dir: String)] = []
+        var scopedURLs: [URL] = []
+        if let libraryRoot = libraries.resolvedFolder() {
+            moduleRoots.append(("", libraryRoot.path))
+            scopedURLs.append(libraryRoot)
+        }
+        for root in fileSpaces.authorizedRoots {
+            moduleRoots.append((root.name, root.url.path))
+            scopedURLs.append(root.url)
+        }
+        let accessed = scopedURLs.filter { $0.startAccessingSecurityScopedResource() }
 
         Task {
-            defer { if didAccess { libraryRoot?.stopAccessingSecurityScopedResource() } }
+            defer { accessed.forEach { $0.stopAccessingSecurityScopedResource() } }
             do {
-                let output = try await runtime.run(
-                    script: source, input: inputValue, timeout: 120, libraryRoot: libraryRoot)
+                let output = try await runtime.runRootedSource(
+                    source: source, roots: moduleRoots, input: inputValue, timeout: 120)
                 result = output
                 state = .finished
             } catch {
