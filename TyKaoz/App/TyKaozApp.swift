@@ -26,7 +26,6 @@ struct TyKaozApp: App {
     @State private var memoryStore = MemoryStore()
     @State private var pluginStore = PluginStore()
     @State private var agentStore = AgentStore()
-    @State private var agentLibraryStore = AgentLibraryStore()
     @State private var wikiManager = WikiManager()
     @State private var mlxDownloads = MLXDownloadCenter()
 
@@ -123,7 +122,6 @@ struct TyKaozApp: App {
             AgentsView()
                 .environment(settings)
                 .environment(agentStore)
-                .environment(agentLibraryStore)
                 .environment(fileSpaceStore)
                 .environment(memoryStore)
                 .environment(pluginStore)

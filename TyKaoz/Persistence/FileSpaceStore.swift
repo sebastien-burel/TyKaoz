@@ -56,9 +56,26 @@ final class FileSpaceStore {
 
     /// Toggle whether an agent may `import` code from a space (opt-in: read
     /// access via the file tools does not by itself grant code execution).
+    /// Turning importability off also clears the default-root mark.
     func setImportable(id: UUID, _ value: Bool) {
         guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
         spaces[idx].importable = value
+        if !value { spaces[idx].isDefaultRoot = false }
+        save()
+    }
+
+    /// Mark a space as the default module root (bare `import "x"`). Exclusive —
+    /// at most one space is default; setting one clears the others. A default
+    /// root is necessarily importable.
+    func setDefaultRoot(id: UUID, _ value: Bool) {
+        guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
+        if value {
+            for i in spaces.indices { spaces[i].isDefaultRoot = false }
+            spaces[idx].importable = true
+            spaces[idx].isDefaultRoot = true
+        } else {
+            spaces[idx].isDefaultRoot = false
+        }
         save()
     }
 
@@ -71,12 +88,14 @@ final class FileSpaceStore {
         }
     }
 
-    /// Only the spaces the user marked importable, resolved to roots — the ones
-    /// an agent may `import` code from (used as named module roots).
-    var importableRoots: [AuthorizedRoot] {
-        spaces.compactMap { space in
-            guard space.importable, let url = resolvedURL(for: space) else { return nil }
-            return AuthorizedRoot(name: space.name, url: url)
+    /// Module roots for an agent run: each importable space as a named root
+    /// (its folder name → `import "name/x"`), plus the space marked default
+    /// also as the bare `""` root (→ `import "x"`).
+    var moduleRoots: [(prefix: String, url: URL)] {
+        spaces.reduce(into: []) { roots, space in
+            guard space.importable, let url = resolvedURL(for: space) else { return }
+            if space.isDefaultRoot { roots.append(("", url)) }
+            roots.append((space.name, url))
         }
     }
 
