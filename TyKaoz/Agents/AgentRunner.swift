@@ -38,13 +38,19 @@ final class AgentRunner {
             settings: settings, fileSpaces: fileSpaces,
             memory: memory, plugins: plugins, wiki: wiki)
         let provider = ProviderFactory.make(from: settings, tools: tools)
+        // Let the agent also pick a provider by name from JS (host.provider(id)),
+        // MLX included: a Sendable resolver + the discovery catalog, snapshotted
+        // here on the main actor.
+        let resolveProvider = ProviderFactory.resolver(from: settings, tools: tools)
+        let providerCatalog = ProviderFactory.catalog(from: settings)
         let inputValue = Self.parseInput(input)
 
         let sink: @Sendable (String) -> Void = { [weak self] line in
             Task { @MainActor in self?.lines.append(line) }
         }
         let runtime = AgentRuntime(
-            makeProvider: { provider }, tools: tools, memory: memory, log: sink)
+            makeProvider: { provider }, resolveProvider: resolveProvider,
+            providerCatalog: providerCatalog, tools: tools, memory: memory, log: sink)
         let source = agent.source
 
         // Module roots (Moddable-style): the agent imports bare specifiers
