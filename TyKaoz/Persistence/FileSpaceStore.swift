@@ -54,11 +54,28 @@ final class FileSpaceStore {
         save()
     }
 
+    /// Toggle whether an agent may `import` code from a space (opt-in: read
+    /// access via the file tools does not by itself grant code execution).
+    func setImportable(id: UUID, _ value: Bool) {
+        guard let idx = spaces.firstIndex(where: { $0.id == id }) else { return }
+        spaces[idx].importable = value
+        save()
+    }
+
     /// Resolves every space into a security-scoped root. Spaces whose bookmark
     /// can't be resolved are skipped; stale ones are refreshed in place.
     var authorizedRoots: [AuthorizedRoot] {
         spaces.compactMap { space in
             guard let url = resolvedURL(for: space) else { return nil }
+            return AuthorizedRoot(name: space.name, url: url)
+        }
+    }
+
+    /// Only the spaces the user marked importable, resolved to roots — the ones
+    /// an agent may `import` code from (used as named module roots).
+    var importableRoots: [AuthorizedRoot] {
+        spaces.compactMap { space in
+            guard space.importable, let url = resolvedURL(for: space) else { return nil }
             return AuthorizedRoot(name: space.name, url: url)
         }
     }

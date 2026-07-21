@@ -50,16 +50,18 @@ final class AgentRunner {
 
         // Module roots (Moddable-style): the agent imports bare specifiers
         // straight from real folders — the library folder is the default root
-        // (`import "util"`), and each file space is a named root by its folder
-        // name (`import "space/util"`). Nothing is copied. Hold every folder's
-        // security scope for the whole run so the engine thread can read them.
+        // (`import "util"`), and each file space *marked importable* is a named
+        // root by its folder name (`import "space/util"`). File tools still see
+        // every space; only importable ones can supply code (opt-in escalation).
+        // Nothing is copied. Hold each folder's security scope for the whole run
+        // so the engine thread can read them.
         var moduleRoots: [(prefix: String, dir: String)] = []
         var scopedURLs: [URL] = []
         if let libraryRoot = libraries.resolvedFolder() {
             moduleRoots.append(("", libraryRoot.path))
             scopedURLs.append(libraryRoot)
         }
-        for root in fileSpaces.authorizedRoots {
+        for root in fileSpaces.importableRoots {
             moduleRoots.append((root.name, root.url.path))
             scopedURLs.append(root.url)
         }
