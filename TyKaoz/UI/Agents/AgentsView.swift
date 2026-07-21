@@ -149,9 +149,14 @@ struct AgentsView: View {
             Text("Entrée (JSON ou texte, optionnel)")
                 .font(Brand.Fonts.body(11))
                 .foregroundStyle(.secondary)
-            TextField("{ \"name\": \"Seb\" }", text: $input)
-                .font(Brand.Fonts.mono(12))
-                .textFieldStyle(.roundedBorder)
+            CodeEditor(text: $input, fontSize: 12)
+                .frame(minHeight: 44)
+                .padding(6)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Brand.Colors.slate.opacity(0.18), lineWidth: 1))
 
             librariesSection
 
