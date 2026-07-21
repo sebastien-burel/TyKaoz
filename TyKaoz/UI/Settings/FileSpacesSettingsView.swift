@@ -51,7 +51,8 @@ struct FileSpacesSettingsView: View {
             qu'aux dossiers ajoutés ici. L'accès est en lecture seule et reste \
             actif d'une session à l'autre. Active « Import » sur un dossier pour \
             autoriser en plus les agents à y importer du code \
-            (import "dossier/module") — désactivé par défaut.
+            (import "dossier/module") — désactivé par défaut. « Défaut » désigne \
+            l'unique dossier importé sans préfixe (import "module").
             """)
                 .font(Brand.Fonts.body(12))
                 .foregroundStyle(.secondary)
@@ -95,6 +96,19 @@ struct FileSpacesSettingsView: View {
                     .controlSize(.mini)
                     .help("Autoriser les agents à importer du code depuis ce dossier "
                         + "(import \"\(space.name)/module\")")
+                    Toggle(isOn: Binding(
+                        get: { space.isDefaultRoot },
+                        set: { store.setDefaultRoot(id: space.id, $0) }
+                    )) {
+                        Text("Défaut")
+                            .font(Brand.Fonts.body(11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .disabled(!space.importable)
+                    .help("Racine par défaut : les agents importent sans préfixe "
+                        + "(import \"module\"). Un seul dossier à la fois.")
                     if let url = store.url(for: space) {
                         Button {
                             // Sandbox: the folder lives outside our container,

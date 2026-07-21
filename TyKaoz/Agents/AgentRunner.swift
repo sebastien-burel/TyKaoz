@@ -23,8 +23,7 @@ final class AgentRunner {
         fileSpaces: FileSpaceStore,
         memory: MemoryStore,
         plugins: PluginStore,
-        wiki: WikiManager,
-        libraries: AgentLibraryStore
+        wiki: WikiManager
     ) {
         guard state != .running else { return }
         state = .running
@@ -49,20 +48,16 @@ final class AgentRunner {
         let source = agent.source
 
         // Module roots (Moddable-style): the agent imports bare specifiers
-        // straight from real folders — the library folder is the default root
-        // (`import "util"`), and each file space *marked importable* is a named
-        // root by its folder name (`import "space/util"`). File tools still see
-        // every space; only importable ones can supply code (opt-in escalation).
-        // Nothing is copied. Hold each folder's security scope for the whole run
-        // so the engine thread can read them.
+        // straight from real folders — each file space *marked importable* is a
+        // named root by its folder name (`import "space/util"`), and the space
+        // marked default is also the bare root (`import "util"`). File tools
+        // still see every space; only importable ones can supply code (opt-in
+        // escalation). Nothing is copied. Hold each folder's security scope for
+        // the whole run so the engine thread can read them.
         var moduleRoots: [(prefix: String, dir: String)] = []
         var scopedURLs: [URL] = []
-        if let libraryRoot = libraries.resolvedFolder() {
-            moduleRoots.append(("", libraryRoot.path))
-            scopedURLs.append(libraryRoot)
-        }
-        for root in fileSpaces.importableRoots {
-            moduleRoots.append((root.name, root.url.path))
+        for root in fileSpaces.moduleRoots {
+            moduleRoots.append((root.prefix, root.url.path))
             scopedURLs.append(root.url)
         }
         let accessed = scopedURLs.filter { $0.startAccessingSecurityScopedResource() }
