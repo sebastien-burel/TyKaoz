@@ -28,19 +28,21 @@ enum ProviderFactory {
     /// chat-capable ids (ComfyUI is image-only, excluded).
     @MainActor
     static func catalog(from settings: AppSettings) -> [ProviderDescriptor] {
+        // `model` = the provider's configured default, so an agent can
+        // instantiate an element directly (host.provider(id, {model})).
         [
-            .init(id: "anthropic", name: "Anthropic"),
-            .init(id: "openai", name: "OpenAI"),
-            .init(id: "google", name: "Google Gemini"),
-            .init(id: "mistral", name: "Mistral"),
-            .init(id: "deepseek", name: "DeepSeek"),
-            .init(id: "qwen", name: "Qwen"),
-            .init(id: "zai", name: "Z.AI"),
-            .init(id: "kimi", name: "Kimi K3"),
-            .init(id: "localOpenAI", name: "Serveur local"),
-            .init(id: "ollama", name: "Ollama"),
+            .init(id: "anthropic", name: "Anthropic", model: settings.anthropicModel),
+            .init(id: "openai", name: "OpenAI", model: settings.openaiModel),
+            .init(id: "google", name: "Google Gemini", model: settings.googleModel),
+            .init(id: "mistral", name: "Mistral", model: settings.mistralModel),
+            .init(id: "deepseek", name: "DeepSeek", model: settings.deepseekModel),
+            .init(id: "qwen", name: "Qwen", model: settings.qwenModel),
+            .init(id: "zai", name: "Z.AI", model: settings.zaiModel),
+            .init(id: "kimi", name: "Kimi K3", model: settings.kimiModel),
+            .init(id: "localOpenAI", name: "Serveur local", model: settings.localOpenAIModel),
+            .init(id: "ollama", name: "Ollama", model: settings.selectedModel),
             .init(id: "apple", name: "Apple Intelligence"),
-            .init(id: "mlx", name: "MLX"),
+            .init(id: "mlx", name: "MLX", model: settings.mlxChatModelID),
         ]
     }
 
