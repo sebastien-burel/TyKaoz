@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import GRDB
 
 /// Reads one wiki page from disk (markdown body), enriched with its

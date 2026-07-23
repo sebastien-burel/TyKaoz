@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 /// Enumerates files under `raw/` — the immutable inputs to the wiki,
 /// populated by the user (mirrored conversations, imported documents).

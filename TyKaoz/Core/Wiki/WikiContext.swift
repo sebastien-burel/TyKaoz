@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import GRDB
 
 /// Bundles every piece the wiki tools need: the on-disk store layout,

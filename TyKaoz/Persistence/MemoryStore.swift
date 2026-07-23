@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import Observation
 
 /// Owns the assistant's pinned preferences about the user — small, stable

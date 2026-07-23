@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 extension ChatMessage {
     /// Maps a stored Message to a ChatMessage. Returns `nil` for `.error`

@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 /// Reads one raw source file. Text formats only — pdf, docx, etc.
 /// will need their own extractor before they're agent-readable.

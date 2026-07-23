@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import GRDB
 
 /// Surfaces the deterministic structural issues in the wiki:

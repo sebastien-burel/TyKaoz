@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import Observation
 
 /// Owns the folders the user has authorised for the file tools. Each space is

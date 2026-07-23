@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 /// Events a dictation session produces. A `.partial` replaces the previous
 /// partial (volatile hypothesis); a `.final` commits a segment for good.
