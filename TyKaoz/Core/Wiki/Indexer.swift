@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import GRDB
 
 enum IndexerError: Error, LocalizedError, Equatable {

@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import Observation
 
 /// A persisted plugin: its raw manifest JSON plus an id. We store the raw text

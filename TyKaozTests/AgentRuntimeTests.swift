@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XSBridgeKit
+import KaozJS
 @testable import TyKaoz
 
 @MainActor
@@ -171,7 +171,7 @@ struct AgentRuntimeTests {
 
     /// After a batch of host calls settles, nothing is left pending (no leaked
     /// in-flight call). The deeper remember/forget rooting balance is an
-    /// XSBridgeKit-internal invariant covered by its own suite.
+    /// KaozJS-internal invariant covered by its own suite.
     @Test
     func bridgeBalancesRootsAfterCalls() async throws {
         let memory = MemoryStore(fileURL: Self.tempURL())

@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 import UniformTypeIdentifiers
 
 /// Lets the user grant the file tools access to local folders. Each added

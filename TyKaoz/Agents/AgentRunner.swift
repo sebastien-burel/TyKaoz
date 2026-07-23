@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 import Observation
 
 /// Drives one run of a JavaScript agent and surfaces its progress to the UI:

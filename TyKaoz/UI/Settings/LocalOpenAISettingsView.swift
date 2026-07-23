@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 
 /// Settings for the generic OpenAI-compatible local provider. Covers
 /// vLLM (`/v1/...`), LM Studio, llama.cpp's `server`, anything that

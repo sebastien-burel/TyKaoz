@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 
 /// Kimi K3 (Moonshot AI). OpenAI-compatible, so the model list comes from the
 /// standard `/v1/models` endpoint and the provider runs as JS (JSProviders.kimi).

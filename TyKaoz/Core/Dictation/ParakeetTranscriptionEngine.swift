@@ -1,5 +1,5 @@
 import AVFAudio
-import TyKaozKit
+import KaozKit
 import FluidAudio
 import Foundation
 

@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 
 /// Shows what the assistant has remembered and lets the user delete entries.
 /// Important for a privacy-first app: the user stays in control of long-term

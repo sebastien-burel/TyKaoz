@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 /// Turns a conversation into an immutable raw source for the wiki
 /// (`raw/conversations/<date>-<slug>.md`). Deterministic, pure formatting;

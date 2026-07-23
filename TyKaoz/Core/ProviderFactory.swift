@@ -1,6 +1,6 @@
 import Foundation
-import TyKaozKit
-import TyKaozKitMLX
+import KaozKit
+import KaozMLX
 
 enum ProviderFactory {
     /// The run's default provider (the one selected in Settings).

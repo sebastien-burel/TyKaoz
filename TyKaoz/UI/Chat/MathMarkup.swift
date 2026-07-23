@@ -1,5 +1,5 @@
 import Foundation
-import TyKaozKit
+import KaozKit
 
 /// Lightweight LaTeX-math → Unicode/plain-text converter, applied to
 /// assistant text at display time only (the stored message keeps the raw

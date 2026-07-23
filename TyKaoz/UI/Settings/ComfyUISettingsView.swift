@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 
 /// Settings for the ComfyUI image-generation provider. The user gives a
 /// server URL (and optional key), then pastes one or more named workflows

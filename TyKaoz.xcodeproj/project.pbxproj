@@ -21,12 +21,12 @@
 		32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B92F2FD29174007412B7 /* HuggingFace */; };
 		32B9B9332FD2919E007412B7 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9B9322FD2919E007412B7 /* Tokenizers */; };
 		32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 32B9BABC2FD2B403007412B7 /* MLXVLM */; };
-		32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984152FE17D62006447E9 /* XSBridgeKit */; };
-		32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984172FE17DA9006447E9 /* XSBridgeKit */; };
-		695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */; };
+		32E984162FE17D62006447E9 /* KaozJS in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984152FE17D62006447E9 /* KaozJS */; };
+		32E984182FE17DA9006447E9 /* KaozJS in Frameworks */ = {isa = PBXBuildFile; productRef = 32E984172FE17DA9006447E9 /* KaozJS */; };
+		695BFB0EA846385C7E243BD8 /* KaozKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FC4D1D1ECF21AFBF28151FA /* KaozKit */; };
 		7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7DA1B2C3D4E5F60708090002 /* GRDB */; };
-		8A755345605B0A106EAE548F /* XSBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8565D6148A9AAC2125F21780 /* XSBridge */; };
-		AABBCCDD11110000EEEE00B1 /* TyKaozKitMLX in Frameworks */ = {isa = PBXBuildFile; productRef = AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */; };
+		8A755345605B0A106EAE548F /* KaozJSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8565D6148A9AAC2125F21780 /* KaozJSCore */; };
+		AABBCCDD11110000EEEE00B1 /* KaozMLX in Frameworks */ = {isa = PBXBuildFile; productRef = AABBCCDD11110000EEEE00B2 /* KaozMLX */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -88,12 +88,12 @@
 				32B9B91B2FD28D96007412B7 /* MLXFast in Frameworks */,
 				32B9BABD2FD2B403007412B7 /* MLXVLM in Frameworks */,
 				7DA1B2C3D4E5F60708090001 /* GRDB in Frameworks */,
-				32E984162FE17D62006447E9 /* XSBridgeKit in Frameworks */,
+				32E984162FE17D62006447E9 /* KaozJS in Frameworks */,
 				32B9B9212FD28D96007412B7 /* MLXRandom in Frameworks */,
 				32B9B9302FD29174007412B7 /* HuggingFace in Frameworks */,
-				8A755345605B0A106EAE548F /* XSBridge in Frameworks */,
-				695BFB0EA846385C7E243BD8 /* TyKaozKit in Frameworks */,
-				AABBCCDD11110000EEEE00B1 /* TyKaozKitMLX in Frameworks */,
+				8A755345605B0A106EAE548F /* KaozJSCore in Frameworks */,
+				695BFB0EA846385C7E243BD8 /* KaozKit in Frameworks */,
+				AABBCCDD11110000EEEE00B1 /* KaozMLX in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -101,7 +101,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				32E984182FE17DA9006447E9 /* XSBridgeKit in Frameworks */,
+				32E984182FE17DA9006447E9 /* KaozJS in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -177,11 +177,11 @@
 				32B9B92F2FD29174007412B7 /* HuggingFace */,
 				32B9B9322FD2919E007412B7 /* Tokenizers */,
 				32B9BABC2FD2B403007412B7 /* MLXVLM */,
-				32E984152FE17D62006447E9 /* XSBridgeKit */,
+				32E984152FE17D62006447E9 /* KaozJS */,
 				32D1C7A22FE9A00000000002 /* FluidAudio */,
-				8565D6148A9AAC2125F21780 /* XSBridge */,
-				0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */,
-				AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */,
+				8565D6148A9AAC2125F21780 /* KaozJSCore */,
+				0FC4D1D1ECF21AFBF28151FA /* KaozKit */,
+				AABBCCDD11110000EEEE00B2 /* KaozMLX */,
 			);
 			productName = TyKaoz;
 			productReference = 32DEB2062FC2F85500BA1D98 /* TyKaoz.app */;
@@ -205,7 +205,7 @@
 			);
 			name = TyKaozTests;
 			packageProductDependencies = (
-				32E984172FE17DA9006447E9 /* XSBridgeKit */,
+				32E984172FE17DA9006447E9 /* KaozJS */,
 			);
 			productName = TyKaozTests;
 			productReference = 32DEB2132FC2F85600BA1D98 /* TyKaozTests.xctest */;
@@ -271,9 +271,8 @@
 				32B9B9222FD28DE8007412B7 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 				32B9B92E2FD29174007412B7 /* XCRemoteSwiftPackageReference "swift-huggingface" */,
 				32B9B9312FD2919E007412B7 /* XCRemoteSwiftPackageReference "swift-transformers" */,
-				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */,
+				32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */,
 				32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
-				5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 32DEB2072FC2F85500BA1D98 /* Products */;
@@ -739,13 +738,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */ = {
+		32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../XSBridgeKit;
-		};
-		5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../TyKaozKit;
+			relativePath = ../KaozKit;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -809,10 +804,10 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		0FC4D1D1ECF21AFBF28151FA /* TyKaozKit */ = {
+		0FC4D1D1ECF21AFBF28151FA /* KaozKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */;
-			productName = TyKaozKit;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */;
+			productName = KaozKit;
 		};
 		326262872FC455B3001B46C0 /* MarkdownUI */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -884,29 +879,29 @@
 			package = 32D1C7A12FE9A00000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
 			productName = FluidAudio;
 		};
-		32E984152FE17D62006447E9 /* XSBridgeKit */ = {
+		32E984152FE17D62006447E9 /* KaozJS */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = XSBridgeKit;
+			productName = KaozJS;
 		};
-		32E984172FE17DA9006447E9 /* XSBridgeKit */ = {
+		32E984172FE17DA9006447E9 /* KaozJS */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */;
-			productName = XSBridgeKit;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */;
+			productName = KaozJS;
 		};
 		7DA1B2C3D4E5F60708090002 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 7DA1B2C3D4E5F60708090003 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
-		8565D6148A9AAC2125F21780 /* XSBridge */ = {
+		8565D6148A9AAC2125F21780 /* KaozJSCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../XSBridgeKit" */;
-			productName = XSBridge;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */;
+			productName = KaozJSCore;
 		};
-		AABBCCDD11110000EEEE00B2 /* TyKaozKitMLX */ = {
+		AABBCCDD11110000EEEE00B2 /* KaozMLX */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 5100384C20AB984216EBAF56 /* XCLocalSwiftPackageReference "../TyKaozKit" */;
-			productName = TyKaozKitMLX;
+			package = 32E984142FE17D62006447E9 /* XCLocalSwiftPackageReference "../KaozKit" */;
+			productName = KaozMLX;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

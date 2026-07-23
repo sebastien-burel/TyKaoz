@@ -1,5 +1,5 @@
 import SwiftUI
-import TyKaozKit
+import KaozKit
 import UniformTypeIdentifiers
 
 /// Lets the user install HTTP tool plugins by dropping or importing a JSON
